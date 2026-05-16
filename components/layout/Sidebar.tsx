@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, MapPin, Map, FileText, Building2, Radio, Landmark, Settings, LogOut, Users, ClipboardList, X } from 'lucide-react'
+import { LayoutDashboard, MapPin, Map, FileText, Building2, Radio, Landmark, Settings, LogOut, Users, ClipboardList, X, ShieldCheck, TrendingUp } from 'lucide-react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useEffect, useState } from 'react'
 
@@ -16,12 +16,14 @@ const nav = [
   { href: '/owners', label: 'Host Agencies', icon: Landmark },
   { href: '/map', label: 'Map View', icon: Map },
   { href: '/reports', label: 'Reports', icon: FileText },
+  { href: '/reports/impact', label: 'Impact Simulator', icon: TrendingUp },
   { href: '/field', label: 'Field Surveys', icon: ClipboardList },
 ]
 
 const adminNav = [
   { href: '/admin', label: 'Data Management', icon: Settings },
   { href: '/admin/users', label: 'User Management', icon: Users, minRole: 'admin' as const },
+  { href: '/settings', label: 'Account Settings', icon: ShieldCheck },
 ]
 
 export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
@@ -54,6 +56,8 @@ export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
 
   async function signOut() {
     setSigningOut(true)
+    // Call server-side logout route so the event is audit-logged with IP
+    await fetch('/api/auth/logout', { method: 'POST' })
     await supabase.auth.signOut()
     router.push('/login')
   }

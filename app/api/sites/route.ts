@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { getActorInfo } from '@/lib/audit'
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,13 +32,17 @@ export async function POST(req: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
+    const actor = await getActorInfo()
     await supabase.from('site_change_log').insert([{
-      site_id: site.id,
-      field_name: 'site_created',
-      old_value: null,
-      new_value: site.site_code,
-      changed_by: 'Admin',
-      changed_at: new Date().toISOString(),
+      site_id:     site.id,
+      entity_type: 'site',
+      field_name:  'site_created',
+      old_value:   null,
+      new_value:   site.site_code,
+      changed_by:  actor.name,
+      user_id:     actor.userId,
+      ip_address:  actor.ip,
+      changed_at:  new Date().toISOString(),
     }])
 
     return NextResponse.json({ id: site.id })

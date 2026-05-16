@@ -61,6 +61,15 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', baseUrl))
   }
 
+  // MFA enforcement: if user has TOTP enrolled but hasn't completed AAL2 this session,
+  // redirect to the MFA challenge page (except when already on /auth/mfa or /settings)
+  if (user && !isPublicPath && pathname !== '/auth/mfa' && pathname !== '/settings') {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+    if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
+      return NextResponse.redirect(new URL('/auth/mfa', baseUrl))
+    }
+  }
+
   return supabaseResponse
 }
 

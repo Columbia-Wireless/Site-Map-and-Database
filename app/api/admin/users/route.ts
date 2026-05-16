@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
+import { getActorInfo, logChange } from '@/lib/audit'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneusqgcwxwkix.supabase.co'
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZmbnRwZHBuZXVzcWdjd3h3a2l4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NTg2MzEsImV4cCI6MjA5MzUzNDYzMX0.kFZ6b2WKAl7GVsEQZeO33qcxhyBruQlTfW0eZfkcg1c'
@@ -84,6 +85,12 @@ export async function POST(request: NextRequest) {
       organization_id: organization_id || null,
     })
 
+    // Audit log
+    const actor = await getActorInfo()
+    await logChange(admin, null, 'user_invited', null, `${email} as ${role}`, actor.name, {
+      userId: actor.userId, ip: actor.ip, entityType: 'auth',
+    })
+
     return NextResponse.json({ success: true, id: invited.user.id })
   } catch (err: any) {
     return NextResponse.json({ error: err.message ?? 'Failed' }, { status: 500 })
@@ -113,6 +120,14 @@ export async function PATCH(request: NextRequest) {
 
     const { error } = await admin.from('profiles').update(patch).eq('id', id)
     if (error) throw error
+
+    // Audit log each changed field
+    const actor = await getActorInfo()
+    for (const [field, value] of Object.entries(patch)) {
+      await logChange(admin, null, `user_${field}_changed`, null, `${id}: ${value}`, actor.name, {
+        userId: actor.userId, ip: actor.ip, entityType: 'auth',
+      })
+    }
 
     return NextResponse.json({ success: true })
   } catch (err: any) {

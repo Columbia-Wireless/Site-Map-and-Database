@@ -5,8 +5,9 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Landmark, MapPin, User, Phone, Mail, DollarSign,
-  AlertTriangle, TrendingUp, Building2, Pencil,
+  AlertTriangle, TrendingUp, Building2, Pencil, Download,
 } from 'lucide-react'
+import { getProfile, canExport } from '@/lib/profile'
 import OwnerDeleteButton from '@/components/owners/OwnerDeleteButton'
 import ContactsPanel from '@/components/contacts/ContactsPanel'
 
@@ -34,6 +35,9 @@ const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
 export default async function OwnerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = getSupabase()
+
+  const profile = await getProfile()
+  const userCanExport = canExport(profile)
 
   const [{ data: owner }, { data: sites }, { data: contactRows }] = await Promise.all([
     supabase.from('state_agencies').select('*').eq('id', id).single(),
@@ -102,7 +106,16 @@ export default async function OwnerDetailPage({ params }: { params: Promise<{ id
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {userCanExport && (
+            <a
+              href={`/api/export/agency/${id}`}
+              download
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: '7px', padding: '9px 16px', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}
+            >
+              <Download size={14} /> Export CSV
+            </a>
+          )}
           <Link href={`/owners/${id}/edit`} style={{ textDecoration: 'none' }}>
             <button style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'white', color: '#1a3a5c', border: '1px solid #e2e8f0', borderRadius: '7px', padding: '9px 16px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
               <Pencil size={14} /> Edit Agency
