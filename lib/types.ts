@@ -1,4 +1,25 @@
-export type SiteStatus = 'active' | 'expiring_soon' | 'expired' | 'disputed' | 'pending'
+export type SiteStatus = 'operational' | 'offline' | 'under_construction' | 'decommissioned'
+
+export type OwnerType = 'municipality' | 'federal' | 'state' | 'utility' | 'private' | 'corporate' | 'nonprofit' | 'other'
+
+export interface SiteOwner {
+  id: string
+  name: string
+  type: OwnerType
+  contact_name: string
+  contact_email: string
+  contact_phone: string
+  address: string
+  city: string
+  state: string
+  zip: string
+  notes: string | null
+  status: 'active' | 'inactive'
+  created_at: string
+  updated_at: string
+}
+
+export type TenancyStatus = 'active' | 'pending' | 'expiring_soon' | 'expired' | 'terminated'
 
 export type TowerType = 'monopole' | 'lattice' | 'rooftop' | 'water_tower' | 'guyed' | 'small_cell'
 
@@ -12,20 +33,33 @@ export interface TowerSite {
   zip: string
   lat: number
   lng: number
-  tenant_name: string
-  tenant_contact: string
-  tenant_email: string
-  owner_name: string
+  host_agency_id: string | null
   tower_type: TowerType
   height_ft: number | null
-  lease_start: string
-  lease_end: string
-  annual_rent: number
-  escalation_rate: number
   status: SiteStatus
+  tenant_slots: number | null
   notes: string | null
   created_at: string
   updated_at: string
+}
+
+export interface SiteTenancy {
+  id: string
+  site_id: string
+  licensee_id: string
+  contract_type: string
+  invoice_method: string
+  mount_type: string
+  antenna_height_ft: number | null
+  annual_rent: number
+  escalation_rate: number
+  license_start: string
+  license_end: string
+  status: TenancyStatus
+  notes: string | null
+  created_at: string
+  updated_at: string
+  licensees?: { name: string } | null
 }
 
 export interface Tenant {
@@ -52,6 +86,21 @@ export interface ChangeLogEntry {
   new_value: string | null
   changed_by: string
   changed_at: string
+}
+
+export type MediaType = 'photo' | 'video'
+
+export interface SiteMedia {
+  id: string
+  site_id: string
+  name: string
+  media_type: MediaType
+  file_path: string
+  mime_type: string | null
+  file_size_kb: number | null
+  description: string | null
+  uploaded_by: string
+  uploaded_at: string
 }
 
 export interface SiteDocument {

@@ -10,7 +10,7 @@ export default async function EditTenantPage({ params }: { params: Promise<{ id:
   const { id } = await params
   const supabase = getSupabase()
 
-  const { data: tenant } = await supabase.from('tenants').select('*').eq('id', id).single()
+  const { data: tenant } = await supabase.from('licensees').select('*').eq('id', id).single()
   if (!tenant) notFound()
 
   return (
@@ -18,7 +18,7 @@ export default async function EditTenantPage({ params }: { params: Promise<{ id:
       <Link href={`/tenants/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#64748b', fontSize: '14px', textDecoration: 'none', marginBottom: '20px' }}>
         <ArrowLeft size={15} /> Back to {tenant.name}
       </Link>
-      <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', margin: '0 0 28px' }}>Edit Tenant</h1>
+      <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', margin: '0 0 28px' }}>Edit Licensee</h1>
       <TenantForm mode="edit" tenantId={id} initial={tenant} />
     </div>
   )

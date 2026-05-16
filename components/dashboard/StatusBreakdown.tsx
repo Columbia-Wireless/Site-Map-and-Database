@@ -1,13 +1,14 @@
 'use client'
 
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { TowerSite } from '@/lib/types'
+
+interface TenancyForChart { status: string }
 
 const STATUS_COLORS: Record<string, string> = {
   active: '#16a34a',
   expiring_soon: '#d97706',
   expired: '#dc2626',
-  disputed: '#be185d',
+  terminated: '#be185d',
   pending: '#64748b',
 }
 
@@ -15,13 +16,13 @@ const STATUS_LABELS: Record<string, string> = {
   active: 'Active',
   expiring_soon: 'Expiring Soon',
   expired: 'Expired',
-  disputed: 'Disputed',
+  terminated: 'Terminated',
   pending: 'Pending',
 }
 
-export default function StatusBreakdown({ sites }: { sites: TowerSite[] }) {
+export default function StatusBreakdown({ tenancies }: { tenancies: TenancyForChart[] }) {
   const counts: Record<string, number> = {}
-  sites.forEach(s => { counts[s.status] = (counts[s.status] || 0) + 1 })
+  tenancies.forEach(t => { counts[t.status] = (counts[t.status] || 0) + 1 })
 
   const data = Object.entries(counts).map(([status, count]) => ({
     name: STATUS_LABELS[status] || status,
@@ -32,15 +33,7 @@ export default function StatusBreakdown({ sites }: { sites: TowerSite[] }) {
   return (
     <ResponsiveContainer width="100%" height={220}>
       <PieChart>
-        <Pie
-          data={data}
-          cx="50%"
-          cy="45%"
-          innerRadius={55}
-          outerRadius={80}
-          paddingAngle={2}
-          dataKey="value"
-        >
+        <Pie data={data} cx="50%" cy="45%" innerRadius={55} outerRadius={80} paddingAngle={2} dataKey="value">
           {data.map((entry, i) => (
             <Cell key={i} fill={STATUS_COLORS[entry.status] || '#94a3b8'} />
           ))}

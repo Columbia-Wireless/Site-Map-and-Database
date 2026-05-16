@@ -5,7 +5,11 @@ import ReportsClient from '@/components/reports/ReportsClient'
 
 export default async function ReportsPage() {
   const supabase = getSupabase()
-  const { data: sites } = await supabase.from('tower_sites').select('*').order('site_code')
+  const [{ data: tenancies }, { data: owners }] = await Promise.all([
+    supabase.from('site_licenses')
+      .select('*, tower_sites(id, site_code, name, state, address, city, host_agency_id, state_agencies(id, name)), licensees(id, name)'),
+    supabase.from('state_agencies').select('id, name').eq('status', 'active').order('name'),
+  ])
 
   return (
     <div style={{ padding: '32px', maxWidth: '1200px' }}>
@@ -15,7 +19,7 @@ export default async function ReportsPage() {
           Generate and export portfolio reports
         </p>
       </div>
-      <ReportsClient sites={sites ?? []} />
+      <ReportsClient tenancies={(tenancies ?? []) as any} owners={owners ?? []} />
     </div>
   )
 }

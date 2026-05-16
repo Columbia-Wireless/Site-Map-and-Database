@@ -6,9 +6,26 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const supabase = getSupabase()
 
+    // Only site-level fields go into tower_sites now
+    const siteData = {
+      site_code: body.site_code,
+      name: body.name,
+      address: body.address,
+      city: body.city,
+      state: body.state,
+      zip: body.zip,
+      lat: Number(body.lat),
+      lng: Number(body.lng),
+      host_agency_id: body.host_agency_id || null,
+      tower_type: body.tower_type,
+      height_ft: body.height_ft ? Number(body.height_ft) : null,
+      status: body.status ?? 'operational',
+      notes: body.notes ?? null,
+    }
+
     const { data: site, error } = await supabase
       .from('tower_sites')
-      .insert([body])
+      .insert([siteData])
       .select('id, site_code')
       .single()
 

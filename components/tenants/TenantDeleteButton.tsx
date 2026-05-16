@@ -16,7 +16,7 @@ export default function TenantDeleteButton({ tenantId, tenantName, activeSiteCou
 
   async function handleDelete() {
     if (activeSiteCount > 0) {
-      alert(`Cannot delete "${tenantName}" — they have ${activeSiteCount} active site${activeSiteCount > 1 ? 's' : ''}. Reassign or expire all sites first.`)
+      alert(`Cannot delete "${tenantName}" — they have ${activeSiteCount} active site${activeSiteCount > 1 ? 's' : ''}. Expire or terminate all licenses first.`)
       return
     }
 

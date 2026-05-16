@@ -18,7 +18,7 @@ const US_STATES = [
 
 function validate(data: FormData): FormErrors {
   const errors: FormErrors = {}
-  if (!data.name.trim()) errors.name = 'Tenant name is required'
+  if (!data.name.trim()) errors.name = 'Licensee name is required'
   if (data.account_manager_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.account_manager_email))
     errors.account_manager_email = 'Must be a valid email address'
   return errors
@@ -94,11 +94,11 @@ export default function TenantForm({ initial, tenantId, mode }: Props) {
       {saved && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '12px 16px', marginBottom: '24px' }}>
           <CheckCircle size={18} color="#16a34a" />
-          <span style={{ fontSize: '14px', color: '#15803d', fontWeight: 500 }}>Tenant saved — redirecting…</span>
+          <span style={{ fontSize: '14px', color: '#15803d', fontWeight: 500 }}>Licensee saved — redirecting…</span>
         </div>
       )}
 
-      <Section title="Tenant Identity">
+      <Section title="Licensee Identity">
         <Field label="Company Name *" error={touched.name ? errors.name : undefined} full>
           <Input value={data.name} onChange={v => set('name', v)} onBlur={() => touch('name')} placeholder="AT&T Mobility" hasError={!!(touched.name && errors.name)} />
         </Field>
@@ -147,7 +147,7 @@ export default function TenantForm({ initial, tenantId, mode }: Props) {
             value={data.notes ?? ''}
             onChange={e => set('notes', e.target.value)}
             rows={4}
-            placeholder="Any relevant notes about this tenant…"
+            placeholder="Any relevant notes about this licensee…"
             style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', resize: 'vertical', fontFamily: 'Arial, sans-serif', boxSizing: 'border-box', outline: 'none' }}
           />
         </Field>
@@ -164,7 +164,7 @@ export default function TenantForm({ initial, tenantId, mode }: Props) {
             fontSize: '14px', fontWeight: 600, cursor: saving || saved ? 'default' : 'pointer',
           }}
         >
-          {saving ? 'Saving…' : saved ? 'Saved!' : mode === 'add' ? 'Add Tenant' : 'Save Changes'}
+          {saving ? 'Saving…' : saved ? 'Saved!' : mode === 'add' ? 'Add Licensee' : 'Save Changes'}
         </button>
         <button
           onClick={() => router.back()}

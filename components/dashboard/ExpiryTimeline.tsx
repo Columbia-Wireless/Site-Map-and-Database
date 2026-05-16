@@ -1,9 +1,10 @@
 'use client'
 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { TowerSite } from '@/lib/types'
 
-export default function ExpiryTimeline({ sites }: { sites: TowerSite[] }) {
+interface TenancyForChart { license_end: string; status: string }
+
+export default function ExpiryTimeline({ tenancies }: { tenancies: TenancyForChart[] }) {
   const now = new Date()
   const buckets: Record<string, number> = {}
 
@@ -13,11 +14,13 @@ export default function ExpiryTimeline({ sites }: { sites: TowerSite[] }) {
     buckets[key] = 0
   }
 
-  sites.forEach(s => {
-    const end = new Date(s.lease_end)
-    const key = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}`
-    if (key in buckets) buckets[key]++
-  })
+  tenancies
+    .filter(t => !['expired', 'terminated'].includes(t.status))
+    .forEach(t => {
+      const end = new Date(t.license_end)
+      const key = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}`
+      if (key in buckets) buckets[key]++
+    })
 
   const data = Object.entries(buckets).map(([month, count]) => {
     const [y, m] = month.split('-')
@@ -29,16 +32,10 @@ export default function ExpiryTimeline({ sites }: { sites: TowerSite[] }) {
   return (
     <ResponsiveContainer width="100%" height={180}>
       <BarChart data={data} margin={{ top: 0, right: 8, left: 0, bottom: 0 }}>
-        <XAxis
-          dataKey="label"
-          tick={{ fontSize: 10, fill: '#94a3b8' }}
-          axisLine={false}
-          tickLine={false}
-          interval={2}
-        />
+        <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} interval={2} />
         <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={20} />
         <Tooltip
-          formatter={(v) => [Number(v), 'Leases Expiring']}
+          formatter={(v) => [Number(v), 'Licenses Expiring']}
           contentStyle={{ border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px' }}
         />
         <Bar dataKey="count" fill="#2563eb" radius={[3, 3, 0, 0]} />

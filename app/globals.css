@@ -49,3 +49,21 @@ body {
   background: #f1f5f9;
   color: #475569;
 }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.75; }
+}
+
+.edit-pencil-hover {
+  opacity: 0 !important;
+  transition: opacity 0.15s;
+}
+div:hover > div > .edit-pencil-hover,
+div:hover > .edit-pencil-hover {
+  opacity: 1 !important;
+}

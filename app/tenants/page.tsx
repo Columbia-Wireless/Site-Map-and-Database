@@ -8,17 +8,17 @@ import TenantTable from '@/components/tenants/TenantTable'
 export default async function TenantsPage() {
   const supabase = getSupabase()
   const { data: tenants } = await supabase
-    .from('tenants')
-    .select('*, tower_sites(id, annual_rent, status)')
+    .from('licensees')
+    .select('*, site_licenses(id, annual_rent, status)')
     .order('name')
 
   return (
     <div style={{ padding: '32px', maxWidth: '1200px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px' }}>
         <div>
-          <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', margin: 0 }}>Tenants</h1>
+          <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', margin: 0 }}>Licensees</h1>
           <p style={{ color: '#64748b', marginTop: '4px', fontSize: '14px' }}>
-            {tenants?.length ?? 0} tenants on record
+            {tenants?.length ?? 0} licensees on record
           </p>
         </div>
         <Link href="/tenants/new" style={{ textDecoration: 'none' }}>
@@ -28,7 +28,7 @@ export default async function TenantsPage() {
             borderRadius: '8px', padding: '10px 18px',
             fontSize: '14px', fontWeight: 600, cursor: 'pointer',
           }}>
-            <Plus size={16} /> Add Tenant
+            <Plus size={16} /> Add Licensee
           </button>
         </Link>
       </div>

@@ -1,13 +1,21 @@
 'use client'
 
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
-import { TowerSite } from '@/lib/types'
 
-export default function RevenueChart({ sites }: { sites: TowerSite[] }) {
+interface TenancyForChart {
+  annual_rent: number
+  status: string
+  tower_sites: { state: string } | null
+}
+
+export default function RevenueChart({ tenancies }: { tenancies: TenancyForChart[] }) {
   const byState: Record<string, number> = {}
-  sites.forEach(s => {
-    byState[s.state] = (byState[s.state] || 0) + Number(s.annual_rent)
-  })
+  tenancies
+    .filter(t => ['active', 'pending', 'expiring_soon'].includes(t.status))
+    .forEach(t => {
+      const state = (t.tower_sites as any)?.state ?? 'Unknown'
+      byState[state] = (byState[state] || 0) + Number(t.annual_rent)
+    })
 
   const data = Object.entries(byState)
     .map(([state, revenue]) => ({ state, revenue }))

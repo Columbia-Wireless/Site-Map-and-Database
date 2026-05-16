@@ -13,8 +13,8 @@ interface Change {
 const FIELD_LABELS: Record<string, string> = {
   annual_rent: 'Annual Rent',
   status: 'Status',
-  tenant_contact: 'Tenant Contact',
-  lease_end: 'Lease End',
+  tenant_contact: 'Licensee Contact',
+  license_end: 'License End',
   notes: 'Notes',
   escalation_rate: 'Escalation Rate',
 }

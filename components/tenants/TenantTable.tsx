@@ -4,14 +4,14 @@ import { useRouter } from 'next/navigation'
 import { Building2 } from 'lucide-react'
 import { Tenant } from '@/lib/types'
 
-interface TenantWithSites extends Tenant {
-  tower_sites: { id: string; annual_rent: number; status: string }[]
+interface TenantWithTenancies extends Tenant {
+  site_licenses: { id: string; annual_rent: number; status: string }[]
 }
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 
-export default function TenantTable({ tenants }: { tenants: TenantWithSites[] }) {
+export default function TenantTable({ tenants }: { tenants: TenantWithTenancies[] }) {
   const router = useRouter()
 
   return (
@@ -19,16 +19,16 @@ export default function TenantTable({ tenants }: { tenants: TenantWithSites[] })
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-            {['Tenant', 'HQ Location', 'Account Manager', 'Sites', 'Annual Revenue', 'Status'].map(h => (
+            {['Licensee', 'HQ Location', 'Account Manager', 'Active Licenses', 'Annual Revenue', 'Status'].map(h => (
               <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {tenants.map((t, i) => {
-            const sites = t.tower_sites ?? []
-            const activeSites = sites.filter(s => ['active', 'pending', 'expiring_soon'].includes(s.status))
-            const totalRevenue = sites.reduce((sum, s) => sum + Number(s.annual_rent), 0)
+            const tenancies = t.site_licenses ?? []
+            const activeTenancies = tenancies.filter(s => ['active', 'pending', 'expiring_soon'].includes(s.status))
+            const totalRevenue = tenancies.reduce((sum, s) => sum + Number(s.annual_rent), 0)
 
             return (
               <tr
@@ -53,8 +53,8 @@ export default function TenantTable({ tenants }: { tenants: TenantWithSites[] })
                   {t.account_manager_name || '—'}
                 </td>
                 <td style={{ padding: '13px 16px', fontSize: '13px' }}>
-                  <span style={{ fontWeight: 600, color: '#0f172a' }}>{activeSites.length}</span>
-                  <span style={{ color: '#94a3b8', fontSize: '12px' }}> / {sites.length} total</span>
+                  <span style={{ fontWeight: 600, color: '#0f172a' }}>{activeTenancies.length}</span>
+                  <span style={{ color: '#94a3b8', fontSize: '12px' }}> / {tenancies.length} licenses</span>
                 </td>
                 <td style={{ padding: '13px 16px', fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
                   {totalRevenue > 0 ? fmt(totalRevenue) : '—'}

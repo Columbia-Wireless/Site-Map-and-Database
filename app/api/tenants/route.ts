@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabase()
 
     const { data, error } = await supabase
-      .from('tenants')
+      .from('licensees')
       .insert([body])
       .select('id')
       .single()
