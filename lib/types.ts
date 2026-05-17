@@ -57,9 +57,11 @@ export interface SiteTenancy {
   license_end: string
   status: TenancyStatus
   notes: string | null
+  document_id: string | null
   created_at: string
   updated_at: string
-  licensees?: { name: string } | null
+  licensees?: { id: string; name: string } | null
+  site_documents?: { id: string; name: string; doc_type: string; storage_path: string } | null
 }
 
 export interface Tenant {

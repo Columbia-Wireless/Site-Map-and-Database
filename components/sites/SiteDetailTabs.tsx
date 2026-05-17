@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Building2, Clock, PlusCircle, MinusCircle, Edit3 } from 'lucide-react'
+import { Building2, Clock, PlusCircle, MinusCircle, Edit3, AlertCircle, RefreshCw } from 'lucide-react'
 import SiteDetailTenancies from './SiteDetailTenancies'
 import SiteMediaGallery from './SiteMediaGallery'
 import SiteDocsAndTerms from './SiteDocsAndTerms'
@@ -48,9 +48,27 @@ const FIELD_LABELS: Record<string, string> = {
 // ─── Main component ──────────────────────────────────────────────────────────
 
 export default function SiteDetailTabs({
-  site, changes, docs, tenants, allLicenses, userCanEdit, slots, occupiedCount, occupiedNames,
+  site, changes: initialChanges, docs, tenants, allLicenses, userCanEdit, slots, occupiedCount, occupiedNames,
 }: Props) {
   const [activeTab, setActiveTab] = useState('overview')
+  const [uploadingMedia, setUploadingMedia] = useState(false)
+  const [auditEntries, setAuditEntries] = useState<any[]>(initialChanges)
+  const [auditLoading, setAuditLoading] = useState(false)
+
+  const refreshAudit = useCallback(async () => {
+    setAuditLoading(true)
+    try {
+      const res = await fetch(`/api/sites/${site.id}/audit`)
+      if (res.ok) setAuditEntries(await res.json())
+    } finally {
+      setAuditLoading(false)
+    }
+  }, [site.id])
+
+  // Fetch fresh audit data whenever the audit tab is opened
+  useEffect(() => {
+    if (activeTab === 'audit') refreshAudit()
+  }, [activeTab, refreshAudit])
 
   const occupancyPct = slots ? Math.min(100, (occupiedCount / slots) * 100) : null
   const barColor = occupancyPct === null ? '#3b82f6'
@@ -74,8 +92,9 @@ export default function SiteDetailTabs({
           // Show badge counts on certain tabs
           const badge = tab.id === 'licenses'  ? allLicenses.filter(l => ['active','pending','expiring_soon'].includes(l.status)).length
                       : tab.id === 'documents' ? docs.length
-                      : tab.id === 'audit'     ? changes.length
+                      : tab.id === 'audit'     ? auditEntries.length
                       : null
+          const showUploadDot = tab.id === 'media' && uploadingMedia && !active
           return (
             <button
               key={tab.id}
@@ -100,16 +119,21 @@ export default function SiteDetailTabs({
                   {badge}
                 </span>
               )}
+              {showUploadDot && (
+                <span style={{
+                  width: '7px', height: '7px', borderRadius: '50%', background: '#f59e0b',
+                  flexShrink: 0, animation: 'pulse 1.2s ease-in-out infinite',
+                }} />
+              )}
             </button>
           )
         })}
       </div>
 
-      {/* ── Tab content ─────────────────────────────────────────────────── */}
+      {/* ── Tab content — all panels stay mounted; only visibility changes ── */}
 
       {/* OVERVIEW */}
-      {activeTab === 'overview' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ display: activeTab === 'overview' ? 'flex' : 'none', flexDirection: 'column', gap: '16px' }}>
           {/* Site Details card */}
           <SCard title="Site Details" icon={<Building2 size={16} color="#2563eb" />}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0' }}>
@@ -160,11 +184,20 @@ export default function SiteDetailTabs({
               )}
               {occupiedNames.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {occupiedNames.map((name, i) => (
-                    <span key={i} style={{ fontSize: '12px', fontWeight: 500, padding: '3px 10px', borderRadius: '20px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
-                      {name}
-                    </span>
-                  ))}
+                  {allLicenses
+                    .filter((l: any) => ['active','pending','expiring_soon'].includes(l.status))
+                    .map((l: any) => (
+                      <Link
+                        key={l.id}
+                        href={`/tenants/${l.licensee_id}?from=/sites/${site.id}`}
+                        style={{ fontSize: '12px', fontWeight: 500, padding: '3px 10px', borderRadius: '20px', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', textDecoration: 'none', transition: 'background 0.15s' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#dbeafe')}
+                        onMouseLeave={e => (e.currentTarget.style.background = '#eff6ff')}
+                      >
+                        {l.licensees?.name ?? l.name ?? 'Unknown'}
+                      </Link>
+                    ))
+                  }
                 </div>
               )}
               {occupiedCount === 0 && <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>No active tenants</p>}
@@ -187,48 +220,64 @@ export default function SiteDetailTabs({
             license_end: l.license_end ?? null,
             status: l.status,
           }))} />
-        </div>
-      )}
+      </div>
 
       {/* LICENSES */}
-      {activeTab === 'licenses' && (
+      <div style={{ display: activeTab === 'licenses' ? 'block' : 'none' }}>
         <SiteDetailTenancies siteId={site.id} tenants={tenants} tenantSlots={slots} />
-      )}
+      </div>
 
       {/* EQUIPMENT */}
-      {activeTab === 'equipment' && (
+      <div style={{ display: activeTab === 'equipment' ? 'block' : 'none' }}>
         <EquipmentPanel siteId={site.id} licenses={licenseOptions} />
-      )}
+      </div>
 
       {/* DOCUMENTS */}
-      {activeTab === 'documents' && (
+      <div style={{ display: activeTab === 'documents' ? 'block' : 'none' }}>
         <SiteDocsAndTerms siteId={site.id} initialDocs={docs} canEdit={userCanEdit} />
-      )}
+      </div>
 
-      {/* MEDIA */}
-      {activeTab === 'media' && (
-        <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-          <SiteMediaGallery siteId={site.id} />
-        </div>
-      )}
+      {/* MEDIA — always mounted so uploads survive tab switches */}
+      <div style={{ display: activeTab === 'media' ? 'block' : 'none', background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <SiteMediaGallery siteId={site.id} onUploadingChange={setUploadingMedia} />
+      </div>
 
       {/* AUDIT TRAIL */}
-      {activeTab === 'audit' && (
-        <SCard title={`Audit Trail (${changes.length} entries)`} icon={<Clock size={16} color="#2563eb" />}>
-          {changes.length > 0 ? changes.map(c => {
-            const isAdd    = c.field_name === 'license_added' || c.field_name === 'site_created'
-            const isRemove = c.field_name === 'license_removed'
-            const isUpdate = !isAdd && !isRemove
-            const dotColor    = isAdd ? '#16a34a' : isRemove ? '#dc2626' : '#2563eb'
-            const badgeBg     = isAdd ? '#dcfce7' : isRemove ? '#fee2e2' : '#eff6ff'
-            const badgeColor  = isAdd ? '#15803d' : isRemove ? '#b91c1c' : '#1d4ed8'
-            const badgeLabel  = isAdd ? 'Added'   : isRemove ? 'Removed' : 'Updated'
-            const BadgeIcon   = isAdd ? PlusCircle : isRemove ? MinusCircle : Edit3
+      <div style={{ display: activeTab === 'audit' ? 'block' : 'none' }}>
+        <SCard
+          title={`Audit Trail (${auditEntries.length} entries)`}
+          icon={<Clock size={16} color="#2563eb" />}
+          action={
+            <button
+              onClick={refreshAudit}
+              disabled={auditLoading}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 10px', fontSize: '12px', color: '#64748b', cursor: auditLoading ? 'default' : 'pointer' }}
+            >
+              <RefreshCw size={12} style={{ animation: auditLoading ? 'spin 1s linear infinite' : 'none' }} />
+              {auditLoading ? 'Refreshing…' : 'Refresh'}
+            </button>
+          }
+        >
+          {auditLoading && auditEntries.length === 0 ? (
+            <div style={{ fontSize: '13px', color: '#94a3b8' }}>Loading…</div>
+          ) : auditEntries.length > 0 ? auditEntries.map(c => {
+            const isFailed = c.field_name === 'media_upload_failed'
+            const isAdd    = !isFailed && (c.field_name === 'license_added' || c.field_name === 'site_created' || c.field_name === 'media_uploaded')
+            const isRemove = !isFailed && (c.field_name === 'license_removed' || c.field_name === 'media_deleted')
+            const isUpdate = !isAdd && !isRemove && !isFailed
+            const dotColor   = isFailed ? '#d97706' : isAdd ? '#16a34a' : isRemove ? '#dc2626' : '#2563eb'
+            const badgeBg    = isFailed ? '#fffbeb' : isAdd ? '#dcfce7' : isRemove ? '#fee2e2' : '#eff6ff'
+            const badgeColor = isFailed ? '#b45309' : isAdd ? '#15803d' : isRemove ? '#b91c1c' : '#1d4ed8'
+            const badgeLabel = isFailed ? 'Failed'  : isAdd ? 'Added'   : isRemove ? 'Removed' : 'Updated'
+            const BadgeIcon  = isFailed ? AlertCircle : isAdd ? PlusCircle : isRemove ? MinusCircle : Edit3
 
             let description = ''
-            if (c.field_name === 'site_created')     description = `Site created (${c.new_value ?? ''})`
-            else if (c.field_name === 'license_added')   description = `License added: ${c.new_value ?? ''}`
-            else if (c.field_name === 'license_removed') description = `License removed: ${c.old_value ?? ''}`
+            if (c.field_name === 'site_created')          description = `Site created (${c.new_value ?? ''})`
+            else if (c.field_name === 'license_added')    description = `License added: ${c.new_value ?? ''}`
+            else if (c.field_name === 'license_removed')  description = `License removed: ${c.old_value ?? ''}`
+            else if (c.field_name === 'media_uploaded')   description = `File uploaded: ${c.new_value ?? ''}`
+            else if (c.field_name === 'media_deleted')    description = `File deleted: ${c.old_value ?? ''}`
+            else if (c.field_name === 'media_upload_failed') description = `Upload failed: ${c.new_value ?? ''}`
             else description = FIELD_LABELS[c.field_name] || c.field_name
 
             return (
@@ -258,19 +307,23 @@ export default function SiteDetailTabs({
             )
           }) : <div style={{ fontSize: '13px', color: '#94a3b8' }}>No changes recorded yet.</div>}
         </SCard>
-      )}
+      </div>
+
     </div>
   )
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function SCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+function SCard({ title, icon, children, action }: { title: string; icon: React.ReactNode; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid #f1f5f9' }}>
-        {icon}
-        <span style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>{title}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid #f1f5f9' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {icon}
+          <span style={{ fontSize: '14px', fontWeight: 600, color: '#0f172a' }}>{title}</span>
+        </div>
+        {action}
       </div>
       {children}
     </div>

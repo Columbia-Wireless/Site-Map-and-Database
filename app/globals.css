@@ -67,3 +67,37 @@ div:hover > div > .edit-pencil-hover,
 div:hover > .edit-pencil-hover {
   opacity: 1 !important;
 }
+
+/* ── Print: only show the report preview ─────────────────────────── */
+/* visibility:hidden on an ancestor CAN be overridden by visibility:visible
+   on a descendant — unlike display:none which cannot be overridden.        */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #report-print-area,
+  #report-print-area * {
+    visibility: visible;
+  }
+
+  #report-print-area {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 24px;
+    margin: 0;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: white !important;
+  }
+
+  /* Hide the Close / Export PDF buttons when printing */
+  #report-print-area .report-no-print {
+    visibility: hidden;
+    height: 0;
+    overflow: hidden;
+  }
+}

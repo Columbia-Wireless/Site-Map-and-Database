@@ -150,12 +150,12 @@ export default function SiteDocuments({ siteId, initialDocs, onDocsChange, canEd
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: file.name,
+          file_name: file.name,
           doc_type: docType,
           storage_path: storagePath,
           file_size_kb: Math.round(file.size / 1024),
           file_hash: fileHash,
-          parent_document_id: parentId || null,
+          parent_id: parentId || null,
         }),
       })
 

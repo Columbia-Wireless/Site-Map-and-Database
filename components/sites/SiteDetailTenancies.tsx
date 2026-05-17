@@ -1,8 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, Pencil, Trash2, FileText } from 'lucide-react'
 import TenancyDrawer from './TenancyDrawer'
+import DocViewerModal from './DocViewerModal'
 import { SiteTenancy } from '@/lib/types'
 
 interface TenantOption { id: string; name: string }
@@ -34,6 +36,7 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editing, setEditing] = useState<TenancyRow | undefined>(undefined)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [viewerDoc, setViewerDoc] = useState<{ docId: string; name: string } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -63,7 +66,7 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
   const totalRevenue = tenancies.reduce((sum, t) => sum + Number(t.annual_rent), 0)
 
   return (
-    <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+    <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #f1f5f9' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -111,7 +114,8 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
           No licenses yet. Click <strong>Add License</strong> to add the first license.
         </div>
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               {['Licensee', 'Contract Type', 'Invoice', 'Mount Type', 'Height', 'Annual Rent', 'Escalation', 'License Start', 'License End', 'Status', ''].map(h => (
@@ -128,7 +132,13 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
               return (
                 <tr key={t.id} style={{ background: i % 2 === 0 ? 'white' : '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
                   <td style={{ padding: '11px 14px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{t.licensees?.name ?? '—'}</div>
+                    {t.licensee_id ? (
+                      <Link href={`/tenants/${t.licensee_id}?from=/sites/${siteId}`} style={{ fontSize: '13px', fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}>
+                        {t.licensees?.name ?? '—'}
+                      </Link>
+                    ) : (
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{t.licensees?.name ?? '—'}</div>
+                    )}
                     {t.notes && (
                       <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.notes}>
                         {t.notes}
@@ -136,13 +146,30 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
                     )}
                   </td>
                   <td style={{ padding: '11px 14px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>
-                    <span style={{
-                      padding: '2px 7px', borderRadius: '10px', fontWeight: 600,
-                      background: t.contract_type === 'Base Agreement' ? '#eff6ff' : t.contract_type === 'Amendment' ? '#f0fdf4' : t.contract_type === 'Settlement' ? '#fef9c3' : '#f1f5f9',
-                      color:      t.contract_type === 'Base Agreement' ? '#1d4ed8' : t.contract_type === 'Amendment' ? '#15803d' : t.contract_type === 'Settlement' ? '#854d0e' : '#475569',
-                    }}>
-                      {t.contract_type ?? 'Base Agreement'}
-                    </span>
+                    {t.document_id && t.site_documents ? (
+                      <button
+                        onClick={() => setViewerDoc({ docId: t.document_id!, name: t.site_documents!.name })}
+                        title="View linked document"
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '5px',
+                          padding: '2px 7px', borderRadius: '10px', fontWeight: 600,
+                          border: 'none', cursor: 'pointer',
+                          background: t.contract_type === 'Base Agreement' ? '#eff6ff' : t.contract_type === 'Amendment' ? '#f0fdf4' : t.contract_type === 'Settlement' ? '#fef9c3' : '#f1f5f9',
+                          color:      t.contract_type === 'Base Agreement' ? '#1d4ed8' : t.contract_type === 'Amendment' ? '#15803d' : t.contract_type === 'Settlement' ? '#854d0e' : '#475569',
+                        }}
+                      >
+                        <FileText size={11} />
+                        {t.contract_type ?? 'Base Agreement'}
+                      </button>
+                    ) : (
+                      <span style={{
+                        padding: '2px 7px', borderRadius: '10px', fontWeight: 600,
+                        background: t.contract_type === 'Base Agreement' ? '#eff6ff' : t.contract_type === 'Amendment' ? '#f0fdf4' : t.contract_type === 'Settlement' ? '#fef9c3' : '#f1f5f9',
+                        color:      t.contract_type === 'Base Agreement' ? '#1d4ed8' : t.contract_type === 'Amendment' ? '#15803d' : t.contract_type === 'Settlement' ? '#854d0e' : '#475569',
+                      }}>
+                        {t.contract_type ?? 'Base Agreement'}
+                      </span>
+                    )}
                   </td>
                   <td style={{ padding: '11px 14px', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
                     {(!t.invoice_method || t.invoice_method === 'None') ? <span style={{ color: '#cbd5e1' }}>—</span> : t.invoice_method}
@@ -170,6 +197,15 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
                   </td>
                   <td style={{ padding: '11px 14px' }}>
                     <div style={{ display: 'flex', gap: '6px' }}>
+                      {t.document_id && t.site_documents && (
+                        <button
+                          onClick={() => setViewerDoc({ docId: t.document_id!, name: t.site_documents!.name })}
+                          style={{ background: 'none', border: '1px solid #bfdbfe', borderRadius: '5px', padding: '4px 6px', cursor: 'pointer', color: '#2563eb' }}
+                          title="View document"
+                        >
+                          <FileText size={13} />
+                        </button>
+                      )}
                       <button
                         onClick={() => openEdit(t)}
                         style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: '5px', padding: '4px 6px', cursor: 'pointer', color: '#64748b' }}
@@ -205,6 +241,16 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
             </tfoot>
           )}
         </table>
+        </div>
+      )}
+
+      {viewerDoc && (
+        <DocViewerModal
+          siteId={siteId}
+          docId={viewerDoc.docId}
+          docName={viewerDoc.name}
+          onClose={() => setViewerDoc(null)}
+        />
       )}
 
       <TenancyDrawer

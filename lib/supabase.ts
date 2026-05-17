@@ -31,8 +31,10 @@ export const supabase = new Proxy({} as SupabaseClient, {
 })
 
 export function getServiceClient(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) throw new Error('Supabase service role env vars not set')
-  return createClient(url, key)
+  // If service role key is available use it (bypasses RLS + storage policies)
+  // Otherwise fall back to the shared anon-key client — storage policies must allow anon operations
+  if (key) return createClient(url, key)
+  return getSupabase()
 }

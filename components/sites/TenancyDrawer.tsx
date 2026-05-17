@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { X, CheckCircle, AlertCircle } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { X, CheckCircle, AlertCircle, FileText, Sparkles, Loader2, Upload } from 'lucide-react'
 import { SiteTenancy } from '@/lib/types'
 
 interface TenantOption { id: string; name: string }
+
+interface SiteDoc { id: string; name: string; doc_type: string }
 
 interface FormData {
   licensee_id: string
@@ -18,12 +20,13 @@ interface FormData {
   license_end: string
   status: string
   notes: string
+  document_id: string
 }
 
 type FormErrors = Partial<Record<keyof FormData, string>>
 
 function emptyForm(): FormData {
-  return { licensee_id: '', contract_type: 'Base Agreement', invoice_method: 'None', mount_type: 'Primary', antenna_height_ft: '', annual_rent: '', escalation_rate: '3.0', license_start: '', license_end: '', status: 'active', notes: '' }
+  return { licensee_id: '', contract_type: 'Base Agreement', invoice_method: 'None', mount_type: 'Primary', antenna_height_ft: '', annual_rent: '', escalation_rate: '3.0', license_start: '', license_end: '', status: 'active', notes: '', document_id: '' }
 }
 
 function validate(data: FormData): FormErrors {
@@ -59,6 +62,12 @@ export default function TenancyDrawer({ open, onClose, onSaved, siteId, tenants,
   const [touched, setTouched] = useState<Partial<Record<keyof FormData, boolean>>>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [siteDocs, setSiteDocs] = useState<SiteDoc[]>([])
+  const [extracting, setExtracting] = useState(false)
+  const [extractMsg, setExtractMsg] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (open) {
@@ -66,6 +75,7 @@ export default function TenancyDrawer({ open, onClose, onSaved, siteId, tenants,
       setSaving(false)
       setErrors({})
       setTouched({})
+      setExtractMsg(null)
       if (existing) {
         setData({
           licensee_id: existing.licensee_id,
@@ -79,12 +89,18 @@ export default function TenancyDrawer({ open, onClose, onSaved, siteId, tenants,
           license_end: existing.license_end,
           status: existing.status,
           notes: existing.notes ?? '',
+          document_id: existing.document_id ?? '',
         })
       } else {
         setData(emptyForm())
       }
+      // Load site documents for the picker
+      fetch(`/api/sites/${siteId}/documents`)
+        .then(r => r.json())
+        .then(docs => setSiteDocs(Array.isArray(docs) ? docs : []))
+        .catch(() => setSiteDocs([]))
     }
-  }, [open, existing])
+  }, [open, existing, siteId])
 
   function set(field: keyof FormData, value: string) {
     const next = { ...data, [field]: value }
@@ -98,6 +114,150 @@ export default function TenancyDrawer({ open, onClose, onSaved, siteId, tenants,
   function touch(field: keyof FormData) {
     setTouched(prev => ({ ...prev, [field]: true }))
     setErrors(prev => ({ ...prev, [field]: validate(data)[field] }))
+  }
+
+  async function handleExtract() {
+    if (!data.document_id) return
+    setExtracting(true)
+    setExtractMsg(null)
+    try {
+      const res = await fetch(`/api/sites/${siteId}/documents/${data.document_id}/extract`, { method: 'POST' })
+      const doc = await res.json()
+      if (!res.ok) throw new Error(doc.error ?? 'Extraction failed')
+      const t = doc.extracted_terms ?? {}
+
+      const val = (field: string) => {
+        const v = t[field]
+        return v && typeof v === 'object' ? v.value : v
+      }
+
+      // Map extracted fields → form, only overwrite blank fields
+      const updates: Partial<FormData> = {}
+      const commDate = val('commencement_date')
+      if (commDate && !data.license_start) updates.license_start = commDate
+
+      const annualRent = val('annual_rent') ?? (val('monthly_rent') ? String(Number(val('monthly_rent')) * 12) : null)
+      if (annualRent && !data.annual_rent) updates.annual_rent = String(annualRent)
+
+      const esc = val('escalation_rate')
+      if (esc && !data.escalation_rate) updates.escalation_rate = String(esc)
+
+      const notes = val('notes')
+      if (notes && !data.notes) updates.notes = String(notes)
+
+      // Auto-set contract type from doc_type if available
+      const selectedDoc = siteDocs.find(d => d.id === data.document_id)
+      if (selectedDoc && !data.contract_type) {
+        if (selectedDoc.doc_type === 'amendment') updates.contract_type = 'Amendment'
+        else if (selectedDoc.doc_type === 'lease') updates.contract_type = 'Base Agreement'
+      }
+
+      setData(prev => ({ ...prev, ...updates }))
+      setExtractMsg(`Extracted ${Object.keys(updates).length} field${Object.keys(updates).length !== 1 ? 's' : ''} from PDF`)
+    } catch (err: any) {
+      setExtractMsg(`Extraction failed: ${err.message}`)
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  async function handleUploadAndExtract(file: File) {
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+      setUploadMsg('Please upload a PDF file')
+      return
+    }
+
+    setUploading(true)
+    setUploadMsg('Uploading PDF…')
+    setExtractMsg(null)
+
+    const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL  ?? 'https://vfntpdpneusqgcwxwkix.supabase.co'
+    const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZmbnRwZHBuZXVzcWdjd3h3a2l4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NTg2MzEsImV4cCI6MjA5MzUzNDYzMX0.kFZ6b2WKAl7GVsEQZeO33qcxhyBruQlTfW0eZfkcg1c'
+
+    try {
+      // 1. Upload PDF to storage
+      const storagePath = `${siteId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+      const storageRes = await fetch(
+        `${SUPABASE_URL}/storage/v1/object/lease-documents/${storagePath}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${SUPABASE_ANON}`,
+            'Content-Type': 'application/pdf',
+            'x-upsert': 'false',
+          },
+          body: await file.arrayBuffer(),
+        },
+      )
+      if (!storageRes.ok) {
+        const txt = await storageRes.text().catch(() => '')
+        throw new Error(`Storage upload failed (${storageRes.status})${txt ? ': ' + txt : ''}`)
+      }
+
+      setUploadMsg('Saving document…')
+
+      // 2. Create document record
+      const docRes = await fetch(`/api/sites/${siteId}/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_name:    file.name,
+          doc_type:     'lease',
+          storage_path: storagePath,
+          file_size_kb: Math.round(file.size / 1024),
+        }),
+      })
+      if (!docRes.ok) {
+        const j = await docRes.json().catch(() => ({}))
+        throw new Error(j.error ?? 'Failed to save document record')
+      }
+      const doc = await docRes.json()
+
+      // 3. Select this doc in the form and add it to the dropdown list
+      setData(prev => ({ ...prev, document_id: doc.id }))
+      setSiteDocs(prev => [{ id: doc.id, name: doc.name, doc_type: doc.doc_type }, ...prev])
+
+      setUploadMsg('Extracting fields from PDF…')
+
+      // 4. Auto-run AI extraction
+      const extractRes = await fetch(`/api/sites/${siteId}/documents/${doc.id}/extract`, { method: 'POST' })
+      const extracted = await extractRes.json()
+      if (!extractRes.ok) throw new Error(extracted.error ?? 'Extraction failed')
+
+      const t = extracted.extracted_terms ?? {}
+      const val = (field: string) => {
+        const v = t[field]
+        return v && typeof v === 'object' ? v.value : v
+      }
+
+      const updates: Partial<FormData> = {}
+      const commDate = val('commencement_date')
+      if (commDate) updates.license_start = commDate
+
+      const termDate = val('term_end_date') ?? val('expiration_date')
+      if (termDate) updates.license_end = termDate
+
+      const annualRent = val('annual_rent') ?? (val('monthly_rent') ? String(Number(val('monthly_rent')) * 12) : null)
+      if (annualRent) updates.annual_rent = String(annualRent)
+
+      const esc = val('escalation_rate')
+      if (esc) updates.escalation_rate = String(esc)
+
+      const notes = val('notes')
+      if (notes && !data.notes) updates.notes = String(notes)
+
+      setData(prev => ({ ...prev, ...updates }))
+      setUploadMsg(null)
+      const count = Object.keys(updates).length
+      setExtractMsg(`✓ Extracted ${count} field${count !== 1 ? 's' : ''} from PDF`)
+    } catch (err: any) {
+      setUploadMsg(null)
+      setExtractMsg(`Upload/extract failed: ${err.message}`)
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
   }
 
   async function handleSubmit() {
@@ -122,6 +282,7 @@ export default function TenancyDrawer({ open, onClose, onSaved, siteId, tenants,
           annual_rent: Number(data.annual_rent),
           escalation_rate: Number(data.escalation_rate),
           antenna_height_ft: data.antenna_height_ft ? Number(data.antenna_height_ft) : null,
+          document_id: data.document_id || null,
         }),
       })
       const json = await res.json()
@@ -258,6 +419,92 @@ export default function TenancyDrawer({ open, onClose, onSaved, siteId, tenants,
                     <option value="terminated">Terminated</option>
                   </select>
                 </Field>
+              </Section>
+
+              <Section title="Linked Document">
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  style={{ display: 'none' }}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadAndExtract(f) }}
+                />
+
+                {/* Primary action: upload & auto-extract */}
+                <div
+                  onClick={() => !uploading && !extracting && fileInputRef.current?.click()}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    padding: '14px', border: `2px dashed ${uploading || extracting ? '#cbd5e1' : '#93c5fd'}`,
+                    borderRadius: '8px', cursor: uploading || extracting ? 'default' : 'pointer',
+                    background: uploading || extracting ? '#f8fafc' : '#eff6ff',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {uploading ? (
+                    <Loader2 size={16} color="#3b82f6" style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+                  ) : (
+                    <Upload size={16} color="#2563eb" style={{ flexShrink: 0 }} />
+                  )}
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: '#1d4ed8' }}>
+                      {uploading ? (uploadMsg ?? 'Working…') : 'Upload PDF & Auto-extract'}
+                    </div>
+                    {!uploading && (
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '1px' }}>
+                        AI reads the contract and fills in the fields below automatically
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Feedback message */}
+                {extractMsg && (
+                  <div style={{ fontSize: '12px', fontWeight: 500, color: extractMsg.startsWith('✓') ? '#15803d' : '#dc2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {extractMsg}
+                  </div>
+                )}
+
+                {/* Fallback: pick from already-uploaded docs */}
+                <div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '5px' }}>
+                    Or link an existing document:
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <select
+                      value={data.document_id}
+                      onChange={e => { set('document_id', e.target.value); setExtractMsg(null) }}
+                      style={{ flex: 1, padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '13px', outline: 'none', background: 'white', cursor: 'pointer' }}
+                    >
+                      <option value="">— none —</option>
+                      {siteDocs.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                    {data.document_id && (
+                      <button
+                        type="button"
+                        onClick={handleExtract}
+                        disabled={extracting || uploading}
+                        title="Extract fields from the selected document"
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '5px',
+                          padding: '7px 12px', borderRadius: '6px', border: 'none',
+                          cursor: extracting || uploading ? 'default' : 'pointer',
+                          background: extracting ? '#f1f5f9' : '#eff6ff',
+                          color: extracting ? '#94a3b8' : '#1d4ed8',
+                          fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {extracting
+                          ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                          : <Sparkles size={12} />}
+                        {extracting ? 'Extracting…' : 'Extract'}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </Section>
 
               <Section title="Notes" last>

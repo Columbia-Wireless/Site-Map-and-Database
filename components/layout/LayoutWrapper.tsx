@@ -4,6 +4,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { Radio, Menu, X, ClipboardList } from 'lucide-react'
 import Sidebar from './Sidebar'
+import { MediaUploadProvider } from '@/contexts/MediaUploadContext'
+import GlobalUploadToast from './GlobalUploadToast'
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -24,7 +26,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
   // Close sidebar on navigation
   useEffect(() => { setSidebarOpen(false) }, [pathname])
 
-  if (isAuthPage || isFieldPage) return <>{children}</>
+  if (isAuthPage || isFieldPage) return <MediaUploadProvider>{children}<GlobalUploadToast /></MediaUploadProvider>
 
   // ── Mobile layout ──────────────────────────────────────────────────────────
   if (isMobile) {
@@ -40,6 +42,8 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
     })()
 
     return (
+      <MediaUploadProvider>
+      <GlobalUploadToast />
       <div style={{ minHeight: '100vh', background: '#f1f5f9' }}>
         {/* Mobile top bar */}
         <div style={{
@@ -98,20 +102,24 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
         </div>
 
         {/* Page content — offset below top bar */}
-        <main style={{ paddingTop: '56px', minHeight: '100vh' }}>
+        <main style={{ paddingTop: '56px', minHeight: '100vh', minWidth: 0 }}>
           {children}
         </main>
       </div>
+      </MediaUploadProvider>
     )
   }
 
   // ── Desktop layout ─────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar />
-      <main style={{ flex: 1, overflow: 'auto' }}>
-        {children}
-      </main>
-    </div>
+    <MediaUploadProvider>
+      <GlobalUploadToast />
+      <div style={{ display: 'flex', minHeight: '100vh' }}>
+        <Sidebar />
+        <main style={{ flex: 1, overflow: 'auto', minWidth: 0 }}>
+          {children}
+        </main>
+      </div>
+    </MediaUploadProvider>
   )
 }

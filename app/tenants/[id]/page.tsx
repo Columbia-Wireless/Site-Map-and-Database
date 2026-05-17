@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowLeft, Building2, User, MapPin, Pencil, Map } from 'lucide-react'
 import TenantDeleteButton from '@/components/tenants/TenantDeleteButton'
 import ContactsPanel from '@/components/contacts/ContactsPanel'
+import LicenseeDocsPanel from '@/components/tenants/LicenseeDocsPanel'
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -18,8 +19,15 @@ const TENANCY_STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   terminated:    { bg: '#f1f5f9', color: '#475569' },
 }
 
-export default async function TenantDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function TenantDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ from?: string }>
+}) {
   const { id } = await params
+  const { from } = await searchParams
   const supabase = getSupabase()
 
   const [{ data: tenant }, { data: tenancies }, { data: contactRows }] = await Promise.all([
@@ -30,6 +38,25 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
     supabase.from('contacts').select('*').eq('entity_type', 'licensee').eq('entity_id', id).order('contact_type'),
   ])
 
+  // Collect unique sites this carrier has licenses on
+  const siteMap: Record<string, { id: string; site_code: string; name: string; city: string; state: string }> = {}
+  for (const t of tenancies ?? []) {
+    const s = (t as any).tower_sites
+    if (s?.id) siteMap[s.id] = { id: s.id, site_code: s.site_code, name: s.name, city: s.city, state: s.state }
+  }
+  const carrierSites = Object.values(siteMap)
+
+  // Fetch ALL documents from every site this carrier has a license on
+  let carrierDocs: any[] = []
+  if (carrierSites.length > 0) {
+    const { data: docsData } = await supabase
+      .from('site_documents')
+      .select('id, name, doc_type, file_size_kb, uploaded_at, doc_status, site_id')
+      .in('site_id', carrierSites.map(s => s.id))
+      .order('uploaded_at', { ascending: false })
+    carrierDocs = docsData ?? []
+  }
+
   if (!tenant) notFound()
 
   const all = tenancies ?? []
@@ -38,8 +65,12 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
 
   return (
     <div style={{ padding: '32px', maxWidth: '1400px' }}>
-      <Link href="/tenants" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#64748b', fontSize: '14px', textDecoration: 'none', marginBottom: '20px' }}>
-        <ArrowLeft size={15} /> Back to Licensees
+      <Link
+        href={from ?? '/tenants'}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#64748b', fontSize: '14px', textDecoration: 'none', marginBottom: '20px' }}
+      >
+        <ArrowLeft size={15} />
+        {from?.startsWith('/sites/') ? 'Back to Site' : 'Back to Licensees'}
       </Link>
 
       {/* Header */}
@@ -102,8 +133,11 @@ export default async function TenantDetailPage({ params }: { params: Promise<{ i
         </div>
       )}
 
+      {/* Documents Panel */}
+      <LicenseeDocsPanel sites={carrierSites} documents={carrierDocs} />
+
       {/* Tenancies Table */}
-      <div>
+      <div style={{ marginTop: '32px' }}>
         <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', marginBottom: '16px' }}>
           Tower Licenses ({all.length})
         </h2>

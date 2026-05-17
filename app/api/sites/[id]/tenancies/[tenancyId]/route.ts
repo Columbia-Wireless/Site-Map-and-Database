@@ -33,6 +33,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.license_end !== undefined) updates.license_end = body.license_end
     if (body.status !== undefined) updates.status = body.status
     if (body.notes !== undefined) updates.notes = body.notes
+    if (body.document_id !== undefined) updates.document_id = body.document_id || null
 
     const { error } = await supabase.from('site_licenses').update(updates).eq('id', tenancyId)
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })

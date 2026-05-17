@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase, getServiceClient } from '@/lib/supabase'
+import { getActorInfo, logChange } from '@/lib/audit'
 
 // ── DELETE /api/sites/[id]/media/[mediaId] ───────────────────────────────────
 export async function DELETE(
@@ -7,13 +8,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; mediaId: string }> }
 ) {
   try {
-    const { mediaId } = await params
+    const { id, mediaId } = await params
     const supabase = getSupabase()
 
-    // Fetch the record first to get the file path
+    // Fetch the full record before deleting — needed for audit log and storage path
     const { data: row, error: fetchErr } = await supabase
       .from('site_media')
-      .select('file_path')
+      .select('file_path, name, media_type, file_size_kb')
       .eq('id', mediaId)
       .single()
 
@@ -37,6 +38,14 @@ export async function DELETE(
       .eq('id', mediaId)
 
     if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 400 })
+
+    // Audit log — use service client so RLS doesn't silently swallow the insert
+    const actor = await getActorInfo()
+    const sizeMb = row.file_size_kb ? `${(row.file_size_kb / 1024).toFixed(1)} MB` : ''
+    await logChange(service, id, 'media_deleted',
+      `${row.name} (${row.media_type}${sizeMb ? ', ' + sizeMb : ''})`, null,
+      actor.name, { userId: actor.userId, ip: actor.ip },
+    )
 
     return NextResponse.json({ ok: true })
   } catch (err) {

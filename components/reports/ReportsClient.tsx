@@ -164,7 +164,7 @@ function ReportPreview({ id, tenancies, ownerName, onClose }: { id: string; tena
   }
 
   return (
-    <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+    <div id="report-print-area" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
       <div style={{ background: '#1a3a5c', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px', marginBottom: '2px' }}>SCETV SITE MANAGEMENT · Columbia Wireless</div>
@@ -173,7 +173,7 @@ function ReportPreview({ id, tenancies, ownerName, onClose }: { id: string; tena
             Generated {now}{ownerName ? ` · ${ownerName}` : ''}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        <div className="report-no-print" style={{ display: 'flex', gap: '10px' }}>
           <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.15)', color: 'white', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px', padding: '7px 14px', fontSize: '13px', cursor: 'pointer' }}>
             <Download size={14} /> Export PDF
           </button>

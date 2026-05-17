@@ -8,7 +8,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const supabase = getSupabase()
     const { data, error } = await supabase
       .from('site_licenses')
-      .select('*, licensees(id, name)')
+      .select('*, licensees(id, name), site_documents(id, name, doc_type, storage_path)')
       .eq('site_id', id)
       .order('created_at', { ascending: true })
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         license_end: body.license_end,
         status: body.status ?? 'active',
         notes: body.notes ?? null,
+        document_id: body.document_id || null,
       }])
       .select('id')
       .single()

@@ -75,10 +75,17 @@ export async function POST(request: NextRequest) {
     }
 
     const admin = getAdminClient()
-    const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email)
+
+    // Send a proper invitation email — user clicks the link and sets their own password.
+    // Supabase free tier allows up to 4 invite emails/hour via its built-in mail service.
+    // redirectTo must be listed in Supabase Auth → URL Configuration → Redirect URLs.
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tower-demo-810298356228.us-east1.run.app'
+    const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
+      redirectTo: siteUrl,
+    })
     if (inviteErr) throw inviteErr
 
-    // Set their profile role + org
+    // Set their profile role + org (the auth trigger creates the row; we upsert to set role/org)
     await admin.from('profiles').upsert({
       id: invited.user.id,
       role,

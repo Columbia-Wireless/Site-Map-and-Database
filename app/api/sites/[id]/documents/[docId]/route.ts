@@ -7,6 +7,33 @@ function getSupabaseAdmin() {
   return createClient(url, key)
 }
 
+// GET /api/sites/[id]/documents/[docId] — returns a 60-min signed URL for viewing
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string; docId: string }> }
+) {
+  const { id: siteId, docId } = await params
+  const supabase = getSupabaseAdmin()
+
+  const { data: doc, error } = await supabase
+    .from('site_documents')
+    .select('id, name, doc_type, storage_path')
+    .eq('id', docId)
+    .eq('site_id', siteId)
+    .single()
+
+  if (error || !doc) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!doc.storage_path) return NextResponse.json({ error: 'No file attached' }, { status: 404 })
+
+  const { data: signed, error: signErr } = await supabase.storage
+    .from('lease-documents')
+    .createSignedUrl(doc.storage_path, 3600) // 1 hour
+
+  if (signErr || !signed) return NextResponse.json({ error: 'Could not generate URL' }, { status: 500 })
+
+  return NextResponse.json({ signedUrl: signed.signedUrl, name: doc.name, doc_type: doc.doc_type })
+}
+
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; docId: string }> }

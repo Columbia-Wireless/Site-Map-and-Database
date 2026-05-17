@@ -143,7 +143,7 @@ export default function UsersClient({
     const data = await res.json()
     setInviting(false)
     if (!res.ok) { setInviteError(data.error ?? 'Failed'); return }
-    setInviteSuccess(`Invite sent to ${inviteEmail}`)
+    setInviteSuccess(inviteEmail)
     setInviteEmail('')
     setInviteRole('viewer')
     setInviteOrg('')
@@ -228,7 +228,13 @@ export default function UsersClient({
             </button>
           </form>
           {inviteError && <div style={{ marginTop: '10px', fontSize: '13px', color: '#b91c1c' }}>{inviteError}</div>}
-          {inviteSuccess && <div style={{ marginTop: '10px', fontSize: '13px', color: '#15803d' }}>{inviteSuccess}</div>}
+          {inviteSuccess && (
+            <div style={{ marginTop: '12px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '12px 14px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#15803d', marginBottom: '4px' }}>✓ Invitation sent</div>
+              <div style={{ fontSize: '13px', color: '#166534' }}>An invitation email has been sent to <strong>{inviteSuccess}</strong>.</div>
+              <div style={{ fontSize: '12px', color: '#16a34a', marginTop: '6px' }}>They'll receive a link to set their password and access the system.</div>
+            </div>
+          )}
         </div>
       )}
 
