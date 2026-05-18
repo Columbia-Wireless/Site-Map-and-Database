@@ -9,7 +9,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGci
 const SERVICE_ROLE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY     || SUPABASE_ANON_KEY
 
 /** Dedicated service-role client for audit writes — never shares a singleton. */
-function getAuditClient(): SupabaseClient {
+export function getAuditClient(): SupabaseClient {
   return createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
@@ -63,10 +63,16 @@ export async function logChange(
   actor: string,
   opts?: { userId?: string | null; ip?: string; entityType?: string },
 ) {
+  const entityType = opts?.entityType ?? (siteId ? 'site' : 'system')
+  // For site changes: site_id holds the tower site UUID.
+  // For owner/licensee changes: entity_id holds the record UUID; site_id is null.
+  const isSite = entityType === 'site'
+
   try {
     const { error } = await getAuditClient().from('site_change_log').insert([{
-      site_id:     siteId,
-      entity_type: opts?.entityType ?? (siteId ? 'site' : 'system'),
+      site_id:     isSite ? siteId : null,
+      entity_id:   isSite ? null : siteId,
+      entity_type: entityType,
       field_name:  fieldName,
       old_value:   oldValue,
       new_value:   newValue,

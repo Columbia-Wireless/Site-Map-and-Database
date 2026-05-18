@@ -148,6 +148,46 @@ export default function ReportsClient({ tenancies, owners }: { tenancies: Tenanc
   )
 }
 
+function printLeaseTimeline() {
+  const svg = document.getElementById('lease-timeline-svg')
+  if (!svg) return
+  const ganttColors: Record<string, string> = {
+    telecom: '#2563eb', federal: '#7c3aed', broadcast: '#d97706',
+    utility: '#16a34a', state: '#64748b', other: '#94a3b8',
+  }
+  const legendHtml = Object.entries(ganttColors).map(([cat, color]) =>
+    `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:11px;color:#64748b">
+      <span style="display:inline-block;width:10px;height:8px;border-radius:2px;background:${color}"></span>
+      <span style="text-transform:capitalize">${cat}</span>
+    </span>`
+  ).join('')
+  const iframe = document.createElement('iframe')
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;visibility:hidden;'
+  document.body.appendChild(iframe)
+  const doc = iframe.contentDocument!
+  doc.open()
+  doc.write(`<!DOCTYPE html><html><head><title>Lease Timeline</title>
+    <style>
+      body{margin:0;padding:12px;font-family:Arial,sans-serif;}
+      h2{font-size:13px;color:#0f172a;margin:0 0 3px;}
+      p{font-size:10px;color:#64748b;margin:0 0 6px;}
+      .legend{margin-bottom:8px;}
+      svg{width:100%;height:auto;display:block;}
+      @page{size:landscape;margin:10mm;}
+    </style></head><body>
+    <h2>SCETV Site Management — Lease Timeline</h2>
+    <p>Each bar = one lease · Width = term · Height = relative rent · Solid = active · Dashed = today</p>
+    <div class="legend">${legendHtml}</div>
+    ${svg.outerHTML}
+  </body></html>`)
+  doc.close()
+  iframe.onload = () => {
+    iframe.contentWindow?.focus()
+    iframe.contentWindow?.print()
+    setTimeout(() => document.body.removeChild(iframe), 2000)
+  }
+}
+
 function ReportPreview({ id, tenancies, ownerName, onClose }: { id: string; tenancies: TenancyRow[]; ownerName: string | null; onClose: () => void }) {
   const report = REPORTS.find(r => r.id === id)!
   const now = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -174,7 +214,10 @@ function ReportPreview({ id, tenancies, ownerName, onClose }: { id: string; tena
           </div>
         </div>
         <div className="report-no-print" style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.15)', color: 'white', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px', padding: '7px 14px', fontSize: '13px', cursor: 'pointer' }}>
+          <button
+            onClick={() => id === 'lease_timeline' ? printLeaseTimeline() : window.print()}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.15)', color: 'white', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px', padding: '7px 14px', fontSize: '13px', cursor: 'pointer' }}
+          >
             <Download size={14} /> Export PDF
           </button>
           <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.1)', color: 'white', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '6px', padding: '7px 12px', fontSize: '13px', cursor: 'pointer' }}>✕</button>
@@ -995,8 +1038,8 @@ function LeaseTimelineReport({ tenancies }: { tenancies: TenancyRow[] }) {
         ))}
       </div>
 
-      <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
-        <svg width={SVG_W} height={SVG_H} style={{ display: 'block' }}>
+      <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflowX: 'auto' }}>
+        <svg id="lease-timeline-svg" width="100%" viewBox={`0 0 ${SVG_W} ${SVG_H}`} style={{ display: 'block', minWidth: `${SVG_W}px` }}>
 
           {/* Year grid lines + labels */}
           {tickYears.map(y => {

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Users, UserPlus, Trash2, Shield, Building2, Mail, Download } from 'lucide-react'
+import { Users, UserPlus, Trash2, Shield, Building2, Mail, Download, ClipboardList, RefreshCw } from 'lucide-react'
 
 type UserRole = 'super_admin' | 'admin' | 'editor' | 'reporter' | 'viewer'
 
@@ -57,6 +57,9 @@ export default function UsersClient({
   const [saving, setSaving] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [globalError, setGlobalError] = useState('')
+  const [showAudit, setShowAudit] = useState(false)
+  const [auditRows, setAuditRows] = useState<any[]>([])
+  const [auditLoading, setAuditLoading] = useState(false)
 
   const isSuperAdmin = currentRole === 'super_admin'
 
@@ -130,6 +133,19 @@ export default function UsersClient({
     setUsers(prev => prev.filter(u => u.id !== userId))
   }
 
+  async function loadAudit() {
+    setAuditLoading(true)
+    const res = await fetch('/api/audit?entity_type=auth&limit=50')
+    const data = await res.json()
+    setAuditLoading(false)
+    if (data.records) setAuditRows(data.records)
+  }
+
+  function toggleAudit() {
+    if (!showAudit && auditRows.length === 0) loadAudit()
+    setShowAudit(v => !v)
+  }
+
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault()
     setInviting(true)
@@ -164,12 +180,20 @@ export default function UsersClient({
             </div>
           </div>
         </div>
-        <button
-          onClick={() => { setShowInvite(!showInvite); setInviteError(''); setInviteSuccess('') }}
-          style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', padding: '10px 18px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
-        >
-          <UserPlus size={15} /> Invite User
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={toggleAudit}
+            style={{ display: 'flex', alignItems: 'center', gap: '7px', background: showAudit ? '#f1f5f9' : 'white', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 18px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+          >
+            <ClipboardList size={15} /> Audit Log
+          </button>
+          <button
+            onClick={() => { setShowInvite(!showInvite); setInviteError(''); setInviteSuccess('') }}
+            style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', padding: '10px 18px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+          >
+            <UserPlus size={15} /> Invite User
+          </button>
+        </div>
       </div>
 
       {globalError && (
@@ -402,6 +426,68 @@ export default function UsersClient({
           })}
         </div>
       </div>
+      {/* Audit Log Panel */}
+      {showAudit && (
+        <div style={{ marginTop: '24px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ClipboardList size={15} color="#64748b" />
+              <span style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>User Management Audit Log</span>
+              <span style={{ fontSize: '12px', color: '#94a3b8' }}>— last 50 events</span>
+            </div>
+            <button
+              onClick={loadAudit}
+              disabled={auditLoading}
+              style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'transparent', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '5px 10px', fontSize: '12px', color: '#64748b', cursor: 'pointer' }}
+            >
+              <RefreshCw size={12} style={{ animation: auditLoading ? 'spin 1s linear infinite' : 'none' }} />
+              Refresh
+            </button>
+          </div>
+          {auditLoading ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>Loading…</div>
+          ) : auditRows.length === 0 ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>No audit events recorded yet.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                  {['Timestamp', 'Actor', 'Event', 'Detail', 'IP'].map(h => (
+                    <th key={h} style={{ padding: '8px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {auditRows.map((row, i) => (
+                  <tr key={row.id} style={{ background: i % 2 === 0 ? 'white' : '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '10px 16px', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                      {new Date(row.changed_at).toLocaleString()}
+                    </td>
+                    <td style={{ padding: '10px 16px', fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>
+                      {row.changed_by}
+                    </td>
+                    <td style={{ padding: '10px 16px' }}>
+                      <span style={{
+                        fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '10px',
+                        background: row.field_name?.startsWith('mfa') ? '#fdf4ff' : row.field_name === 'user_deleted' ? '#fef2f2' : '#eff6ff',
+                        color: row.field_name?.startsWith('mfa') ? '#7e22ce' : row.field_name === 'user_deleted' ? '#b91c1c' : '#1d4ed8',
+                      }}>
+                        {row.field_name}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 16px', fontSize: '12px', color: '#475569' }}>
+                      {row.new_value ?? row.old_value ?? '—'}
+                    </td>
+                    <td style={{ padding: '10px 16px', fontSize: '12px', color: '#94a3b8' }}>
+                      {row.ip_address ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   )
 }

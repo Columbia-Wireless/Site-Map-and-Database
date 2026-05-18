@@ -7,6 +7,7 @@ import { ArrowLeft, Building2, User, MapPin, Pencil, Map } from 'lucide-react'
 import TenantDeleteButton from '@/components/tenants/TenantDeleteButton'
 import ContactsPanel from '@/components/contacts/ContactsPanel'
 import LicenseeDocsPanel from '@/components/tenants/LicenseeDocsPanel'
+import AuditDrawer from '@/components/shared/AuditDrawer'
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -101,6 +102,7 @@ export default async function TenantDetailPage({
               <Map size={14} /> View on Map
             </button>
           </Link>
+          <AuditDrawer entityId={id} entityType="licensee" />
           <Link href={`/tenants/${id}/edit`} style={{ textDecoration: 'none' }}>
             <button style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'white', color: '#1a3a5c', border: '1px solid #e2e8f0', borderRadius: '7px', padding: '9px 16px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
               <Pencil size={14} /> Edit Licensee

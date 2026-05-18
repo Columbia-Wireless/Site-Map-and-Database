@@ -79,11 +79,16 @@ export async function POST(request: NextRequest) {
     // Send a proper invitation email — user clicks the link and sets their own password.
     // Supabase free tier allows up to 4 invite emails/hour via its built-in mail service.
     // redirectTo must be listed in Supabase Auth → URL Configuration → Redirect URLs.
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tower-demo-810298356228.us-east1.run.app'
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tower-demo-461686768358.us-east1.run.app'
+    console.log('[invite] calling inviteUserByEmail for', email, 'redirectTo:', siteUrl)
     const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
       redirectTo: siteUrl,
     })
-    if (inviteErr) throw inviteErr
+    if (inviteErr) {
+      console.error('[invite] inviteUserByEmail failed:', inviteErr.message, inviteErr)
+      throw inviteErr
+    }
+    console.log('[invite] success, user id:', invited.user.id)
 
     // Set their profile role + org (the auth trigger creates the row; we upsert to set role/org)
     await admin.from('profiles').upsert({
@@ -100,6 +105,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, id: invited.user.id })
   } catch (err: any) {
+    console.error('[invite] POST /api/admin/users unhandled error:', err?.message, err)
     return NextResponse.json({ error: err.message ?? 'Failed' }, { status: 500 })
   }
 }
@@ -159,8 +165,18 @@ export async function DELETE(request: NextRequest) {
     }
 
     const admin = getAdminClient()
+
+    // Fetch email before deleting so it appears in the audit record
+    const { data: { user: target } } = await admin.auth.admin.getUserById(id)
+    const targetEmail = target?.email ?? id
+
     const { error } = await admin.auth.admin.deleteUser(id)
     if (error) throw error
+
+    const actor = await getActorInfo()
+    await logChange(admin, null, 'user_deleted', targetEmail, null, actor.name, {
+      userId: actor.userId, ip: actor.ip, entityType: 'auth',
+    })
 
     return NextResponse.json({ success: true })
   } catch (err: any) {

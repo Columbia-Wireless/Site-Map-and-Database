@@ -100,4 +100,18 @@ div:hover > .edit-pencil-hover {
     height: 0;
     overflow: hidden;
   }
+
+  /* Remove overflow clipping so chart renders fully */
+  #report-print-area,
+  #report-print-area > div,
+  #report-print-area > div > div {
+    overflow: visible !important;
+  }
+
+  /* Scale SVG to page width, drop min-width constraint */
+  #report-print-area svg {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+  }
 }

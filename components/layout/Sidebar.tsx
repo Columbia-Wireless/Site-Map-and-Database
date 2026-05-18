@@ -2,9 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, MapPin, Map, FileText, Building2, Radio, Landmark, Settings, LogOut, Users, ClipboardList, X, ShieldCheck, TrendingUp } from 'lucide-react'
+import { LayoutDashboard, MapPin, Map, FileText, Building2, Radio, Landmark, Settings, LogOut, Users, ClipboardList, X, ShieldCheck, TrendingUp, Search, PenSquare } from 'lucide-react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useEffect, useState } from 'react'
+import MasterQuery from './MasterQuery'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneusqgcwxwkix.supabase.co'
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZmbnRwZHBuZXVzcWdjd3h3a2l4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NTg2MzEsImV4cCI6MjA5MzUzNDYzMX0.kFZ6b2WKAl7GVsEQZeO33qcxhyBruQlTfW0eZfkcg1c'
@@ -23,6 +24,8 @@ const nav = [
 const adminNav = [
   { href: '/admin', label: 'Data Management', icon: Settings },
   { href: '/admin/users', label: 'User Management', icon: Users, minRole: 'admin' as const },
+  { href: '/admin/audit', label: 'Audit Log', icon: ClipboardList, minRole: 'admin' as const },
+  { href: '/admin/reports', label: 'Report Builder', icon: PenSquare, minRole: 'admin' as const },
   { href: '/settings', label: 'Account Settings', icon: ShieldCheck },
 ]
 
@@ -63,6 +66,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
   }
 
   return (
+    <>
     <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
       {/* Logo + optional close button */}
       <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
@@ -85,6 +89,25 @@ export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
             </button>
           )}
         </div>
+      </div>
+
+      {/* Search */}
+      <div style={{ padding: '10px 12px 0' }}>
+        <button
+          onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', gap: '8px',
+            background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: '7px', padding: '8px 10px', cursor: 'pointer', color: 'rgba(255,255,255,0.5)',
+            fontSize: '13px', transition: 'background 0.15s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.14)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+        >
+          <Search size={14} />
+          <span style={{ flex: 1, textAlign: 'left' }}>Search everything…</span>
+          <span style={{ fontSize: '10px', background: 'rgba(255,255,255,0.12)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.03em' }}>Ctrl+K</span>
+        </button>
       </div>
 
       {/* Nav */}
@@ -199,5 +222,7 @@ export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
         </div>
       </div>
     </aside>
+    <MasterQuery />
+  </>
   )
 }

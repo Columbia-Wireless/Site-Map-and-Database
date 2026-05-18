@@ -40,6 +40,7 @@ export default function MFAChallengePage() {
       })
       if (vErr) throw vErr
 
+      fetch('/api/audit/mfa-event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'mfa_challenge_success' }) })
       router.replace('/dashboard')
     } catch (err: any) {
       setError(err.message ?? 'Invalid code. Please try again.')

@@ -16,7 +16,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
     supabase.from('site_change_log').select('*').eq('site_id', id).order('changed_at', { ascending: false }),
     supabase.from('site_documents').select('*').eq('site_id', id).order('uploaded_at', { ascending: false }),
     supabase.from('licensees').select('id, name').order('name'),
-    supabase.from('site_licenses').select('id, status, annual_rent, license_start, license_end, licensees(name)').eq('site_id', id).order('license_start', { ascending: true }),
+    supabase.from('site_licenses').select('id, status, annual_rent, license_start, license_end, licensee_id, licensees(name)').eq('site_id', id).order('license_start', { ascending: true }),
     getProfile(),
   ])
 

@@ -10,6 +10,7 @@ import {
 import { getProfile, canExport } from '@/lib/profile'
 import OwnerDeleteButton from '@/components/owners/OwnerDeleteButton'
 import ContactsPanel from '@/components/contacts/ContactsPanel'
+import AuditDrawer from '@/components/shared/AuditDrawer'
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -116,6 +117,7 @@ export default async function OwnerDetailPage({ params }: { params: Promise<{ id
               <Download size={14} /> Export CSV
             </a>
           )}
+          <AuditDrawer entityId={id} entityType="owner" />
           <Link href={`/owners/${id}/edit`} style={{ textDecoration: 'none' }}>
             <button style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'white', color: '#1a3a5c', border: '1px solid #e2e8f0', borderRadius: '7px', padding: '9px 16px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
               <Pencil size={14} /> Edit Agency

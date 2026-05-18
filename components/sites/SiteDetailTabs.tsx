@@ -8,6 +8,7 @@ import SiteMediaGallery from './SiteMediaGallery'
 import SiteDocsAndTerms from './SiteDocsAndTerms'
 import SiteRevenueHistory from './SiteRevenueHistory'
 import EquipmentPanel from './EquipmentPanel'
+import SiteComparables from './SiteComparables'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -26,12 +27,13 @@ interface Props {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'overview',   label: 'Overview',     icon: '📋' },
-  { id: 'licenses',   label: 'Licenses',     icon: '📄' },
-  { id: 'equipment',  label: 'Equipment',    icon: '📡' },
-  { id: 'documents',  label: 'Documents',    icon: '🗂️' },
-  { id: 'media',      label: 'Media',        icon: '📷' },
-  { id: 'audit',      label: 'Audit Trail',  icon: '🕐' },
+  { id: 'overview',      label: 'Overview',      icon: '📋' },
+  { id: 'licenses',      label: 'Licenses',      icon: '📄' },
+  { id: 'equipment',     label: 'Equipment',     icon: '📡' },
+  { id: 'comparables',   label: 'Comparables',   icon: '📊' },
+  { id: 'documents',     label: 'Documents',     icon: '🗂️' },
+  { id: 'media',         label: 'Media',         icon: '📷' },
+  { id: 'audit',         label: 'Audit Trail',   icon: '🕐' },
 ]
 
 const TYPE_LABELS: Record<string, string> = {
@@ -186,7 +188,7 @@ export default function SiteDetailTabs({
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {allLicenses
                     .filter((l: any) => ['active','pending','expiring_soon'].includes(l.status))
-                    .map((l: any) => (
+                    .map((l: any) => l.licensee_id ? (
                       <Link
                         key={l.id}
                         href={`/tenants/${l.licensee_id}?from=/sites/${site.id}`}
@@ -196,6 +198,13 @@ export default function SiteDetailTabs({
                       >
                         {l.licensees?.name ?? l.name ?? 'Unknown'}
                       </Link>
+                    ) : (
+                      <span
+                        key={l.id}
+                        style={{ fontSize: '12px', fontWeight: 500, padding: '3px 10px', borderRadius: '20px', background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' }}
+                      >
+                        {l.licensees?.name ?? l.name ?? 'Unknown'}
+                      </span>
                     ))
                   }
                 </div>
@@ -230,6 +239,11 @@ export default function SiteDetailTabs({
       {/* EQUIPMENT */}
       <div style={{ display: activeTab === 'equipment' ? 'block' : 'none' }}>
         <EquipmentPanel siteId={site.id} licenses={licenseOptions} />
+      </div>
+
+      {/* COMPARABLES */}
+      <div style={{ display: activeTab === 'comparables' ? 'block' : 'none' }}>
+        <SiteComparables siteId={site.id} />
       </div>
 
       {/* DOCUMENTS */}

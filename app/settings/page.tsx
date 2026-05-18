@@ -69,6 +69,7 @@ export default function SettingsPage() {
     setFactorId(enrollId)
     setStep('done')
     setSuccess('Two-factor authentication is now active on your account.')
+    fetch('/api/audit/mfa-event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'mfa_enrolled' }) })
   }
 
   async function unenroll() {
@@ -82,6 +83,7 @@ export default function SettingsPage() {
     setFactorId('')
     setStep('idle')
     setSuccess('Two-factor authentication has been removed.')
+    fetch('/api/audit/mfa-event', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'mfa_unenrolled' }) })
   }
 
   function copySecret() {
