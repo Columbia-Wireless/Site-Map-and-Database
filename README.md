@@ -1,3 +1,16 @@
+Columbia Wireless Site Asset Management, a Next.js + Supabase tower/site management platform built by VeriPura, integrated with SAM 2.0 for document intake.
+
+**Documentation:**
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), stack, deployment, auth, multi-tenant org scoping.
+- [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md), tables, columns, relationships (reconstructed from code, `supabase/schema.sql` is stale, don't trust it).
+- [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md), every API route and its actual permission gating, including known gaps.
+- [`docs/SAM2_INTEGRATION.md`](docs/SAM2_INTEGRATION.md), the SAM 2.0 integration contract, sharable with the SAM 2.0 side.
+- `Columbia_Wireless_User_Guide.docx`, client-facing feature walkthrough.
+
+`DEMO_OVERVIEW.md`, `DEMO_STATUS.md`, and `DEMO_VERIFICATION_GUIDE.md` in the project root predate the Columbia Wireless rebrand and SAM 2.0 integration and are out of date, prefer the `docs/` folder above.
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
