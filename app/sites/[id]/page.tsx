@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { getSupabase } from '@/lib/supabase'
 import { getProfile, canEdit } from '@/lib/profile'
+import { scopeFromProfile, isSiteVisible } from '@/lib/orgScope'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, MapPin } from 'lucide-react'
@@ -10,14 +11,16 @@ import SiteDetailTabs from '@/components/sites/SiteDetailTabs'
 export default async function SiteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = getSupabase()
+  const profile = await getProfile()
+  const scope = scopeFromProfile(profile)
+  if (!(await isSiteVisible(id, scope))) notFound()
 
-  const [{ data: site }, { data: changes }, { data: docs }, { data: tenants }, { data: activeLicenses }, profile] = await Promise.all([
+  const [{ data: site }, { data: changes }, { data: docs }, { data: tenants }, { data: activeLicenses }] = await Promise.all([
     supabase.from('tower_sites').select('*, state_agencies(id, name)').eq('id', id).single(),
     supabase.from('site_change_log').select('*').eq('site_id', id).order('changed_at', { ascending: false }),
     supabase.from('site_documents').select('*').eq('site_id', id).order('uploaded_at', { ascending: false }),
     supabase.from('licensees').select('id, name').order('name'),
     supabase.from('site_licenses').select('id, status, annual_rent, license_start, license_end, licensee_id, licensees(name)').eq('site_id', id).order('license_start', { ascending: true }),
-    getProfile(),
   ])
 
   if (!site) notFound()

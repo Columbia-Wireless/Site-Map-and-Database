@@ -37,12 +37,12 @@ function typeBadge(t: string) {
   return TYPE_COLORS[t] ?? { bg: '#f1f5f9', color: '#64748b' }
 }
 
-export default function ContactsPanel({ contacts }: { contacts: Contact[] }) {
+export default function ContactsPanel({ contacts, ownerLabel = 'Owner' }: { contacts: Contact[]; ownerLabel?: string }) {
   if (!contacts.length) return null
 
   const groups = contacts.reduce<Record<string, Contact[]>>((acc, c) => {
     const grp = c.contact_type.startsWith('Carrier') ? 'Carrier / Licensee'
-      : c.contact_type.startsWith('Owner') ? 'Owner / Agency'
+      : c.contact_type.startsWith('Owner') ? `Owner / ${ownerLabel}`
       : c.contact_type.startsWith('VZW') ? 'Infrastructure'
       : ['Electric Billing', 'Generator Contractor', 'Operations Manager', 'Site Contact'].includes(c.contact_type) ? 'Infrastructure'
       : 'Other'

@@ -1,21 +1,24 @@
 export const dynamic = 'force-dynamic'
 
 import { getSupabase } from '@/lib/supabase'
+import { getProfile } from '@/lib/profile'
+import { scopeFromProfile, scopeSitesQuery, getVisibleSiteIds } from '@/lib/orgScope'
 import ImpactSimulator from '@/components/reports/ImpactSimulator'
 
 export default async function ImpactPage() {
   const supabase = getSupabase()
+  const scope = scopeFromProfile(await getProfile())
 
-  const [{ data: sites }, { data: licenses }] = await Promise.all([
-    supabase
-      .from('tower_sites')
-      .select('id, site_code, name, city, state, tower_type, status, tenant_slots')
-      .order('name'),
-    supabase
-      .from('site_licenses')
-      .select('site_id, annual_rent, status')
-      .in('status', ['active', 'pending', 'expiring_soon']),
-  ])
+  const sitesQuery = scopeSitesQuery(
+    supabase.from('tower_sites').select('id, site_code, name, city, state, tower_type, status, tenant_slots'),
+    scope,
+  ).order('name')
+
+  let licensesQuery = supabase.from('site_licenses').select('site_id, annual_rent, status').in('status', ['active', 'pending', 'expiring_soon'])
+  const visibleSiteIds = await getVisibleSiteIds(scope)
+  if (visibleSiteIds) licensesQuery = licensesQuery.in('site_id', visibleSiteIds)
+
+  const [{ data: sites }, { data: licenses }] = await Promise.all([sitesQuery, licensesQuery])
 
   // Summarise current revenue + carrier count per site
   const rentBySite: Record<string, { carriers: number; annualRent: number }> = {}
@@ -25,7 +28,7 @@ export default async function ImpactPage() {
     rentBySite[lic.site_id].annualRent += Number(lic.annual_rent ?? 0)
   }
 
-  const siteData = (sites ?? []).map(s => ({
+  const siteData = (sites ?? []).map((s: any) => ({
     id:            s.id,
     site_code:     s.site_code,
     name:          s.name,

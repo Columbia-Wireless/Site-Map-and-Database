@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logDocEvent, getCallerName } from '@/lib/logDocEvent'
+import { assertSiteVisible } from '@/lib/orgScope'
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   lease:           'Lease Agreement',
@@ -27,6 +28,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    if (!(await assertSiteVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const supabase = getSupabaseAdmin()
 
     const { data, error } = await supabase
@@ -50,6 +52,7 @@ export async function POST(
 ) {
   try {
     const { id: siteId } = await params
+    if (!(await assertSiteVisible(siteId))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const supabase = getSupabaseAdmin()
     const userName = await getCallerName(req)
 

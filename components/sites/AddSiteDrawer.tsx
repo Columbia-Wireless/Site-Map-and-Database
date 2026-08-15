@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { X, CheckCircle, AlertCircle } from 'lucide-react'
+import { useOrgLabel } from '@/contexts/OrgLabelContext'
 
 interface OwnerOption { id: string; name: string }
 
@@ -53,10 +54,27 @@ function validate(data: FormData): FormErrors {
 }
 
 type SubmitState = 'idle' | 'saving' | 'success'
+type Confidence = 'high' | 'medium' | 'low'
 
-interface Props { open: boolean; onClose: () => void; onSaved: () => void; owners: OwnerOption[] }
+interface Props {
+  open: boolean
+  onClose: () => void
+  onSaved: () => void
+  owners: OwnerOption[]
+  initialData?: Partial<FormData>
+  fieldConfidence?: Partial<Record<keyof FormData, Confidence>>
+  sourceFilename?: string
+}
 
-export default function AddSiteDrawer({ open, onClose, onSaved, owners }: Props) {
+function ConfidenceDot({ confidence }: { confidence?: Confidence }) {
+  if (!confidence) return null
+  const color = confidence === 'high' ? '#16a34a' : confidence === 'medium' ? '#d97706' : '#dc2626'
+  const title = confidence === 'high' ? 'High confidence (from lease)' : confidence === 'medium' ? 'Medium confidence (from lease) — verify' : 'Low confidence (from lease) — verify'
+  return <span title={title} style={{ width: '8px', height: '8px', borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0, boxShadow: `0 0 0 2px ${color}33` }} />
+}
+
+export default function AddSiteDrawer({ open, onClose, onSaved, owners, initialData, fieldConfidence, sourceFilename }: Props) {
+  const { ownerSingular } = useOrgLabel()
   const [data, setData] = useState<FormData>(EMPTY)
   const [errors, setErrors] = useState<FormErrors>({})
   const [touched, setTouched] = useState<Partial<Record<keyof FormData, boolean>>>({})
@@ -65,8 +83,8 @@ export default function AddSiteDrawer({ open, onClose, onSaved, owners }: Props)
   const [savedName, setSavedName] = useState('')
 
   useEffect(() => {
-    if (open) { setData(EMPTY); setErrors({}); setTouched({}); setSubmitState('idle') }
-  }, [open])
+    if (open) { setData({ ...EMPTY, ...initialData }); setErrors({}); setTouched({}); setSubmitState('idle') }
+  }, [open, initialData])
 
   const isDirty = useCallback(() =>
     Object.keys(data).some(k => data[k as keyof FormData] !== EMPTY[k as keyof FormData]), [data])
@@ -173,6 +191,11 @@ export default function AddSiteDrawer({ open, onClose, onSaved, owners }: Props)
         ) : (
           <>
             <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+              {sourceFilename && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px 14px', marginBottom: '20px', fontSize: '12px', color: '#1d4ed8' }}>
+                  Pre-filled from lease document <strong>{sourceFilename}</strong> — colored dots show extraction confidence. Please review and correct before saving.
+                </div>
+              )}
               <Section title="Site Identity">
                 <Row>
                   <Field label="Site Code *" error={touched.site_code ? errors.site_code : undefined}>
@@ -187,39 +210,42 @@ export default function AddSiteDrawer({ open, onClose, onSaved, owners }: Props)
                     ]} />
                   </Field>
                 </Row>
-                <Field label="Site Name *" error={touched.name ? errors.name : undefined} full>
+                <Field label="Site Name *" labelExtra={<ConfidenceDot confidence={fieldConfidence?.name} />} error={touched.name ? errors.name : undefined} full>
                   <Input value={data.name} onChange={v => set('name', v)} onBlur={() => touch('name')} placeholder="e.g. Rockville Tower A" hasError={!!(touched.name && errors.name)} />
                 </Field>
               </Section>
 
               <Section title="Location">
-                <Field label="Street Address *" error={touched.address ? errors.address : undefined} full>
+                <Field label="Street Address *" labelExtra={<ConfidenceDot confidence={fieldConfidence?.address} />} error={touched.address ? errors.address : undefined} full>
                   <Input value={data.address} onChange={v => set('address', v)} onBlur={() => touch('address')} placeholder="123 Tower Rd" hasError={!!(touched.address && errors.address)} />
                 </Field>
                 <Row>
-                  <Field label="City *" error={touched.city ? errors.city : undefined}>
+                  <Field label="City *" labelExtra={<ConfidenceDot confidence={fieldConfidence?.city} />} error={touched.city ? errors.city : undefined}>
                     <Input value={data.city} onChange={v => set('city', v)} onBlur={() => touch('city')} placeholder="Rockville" hasError={!!(touched.city && errors.city)} />
                   </Field>
-                  <Field label="State *" error={touched.state ? errors.state : undefined}>
+                  <Field label="State *" labelExtra={<ConfidenceDot confidence={fieldConfidence?.state} />} error={touched.state ? errors.state : undefined}>
                     <Select value={data.state} onChange={v => set('state', v)} options={[{ value: '', label: 'Select…' }, ...US_STATES.map(s => ({ value: s, label: s }))]} hasError={!!(touched.state && errors.state)} />
                   </Field>
-                  <Field label="ZIP *" error={touched.zip ? errors.zip : undefined}>
+                  <Field label="ZIP *" labelExtra={<ConfidenceDot confidence={fieldConfidence?.zip} />} error={touched.zip ? errors.zip : undefined}>
                     <Input value={data.zip} onChange={v => set('zip', v)} onBlur={() => touch('zip')} placeholder="20850" hasError={!!(touched.zip && errors.zip)} />
                   </Field>
                 </Row>
                 <Row>
-                  <Field label="Latitude *" error={touched.lat ? errors.lat : undefined}>
+                  <Field label="Latitude *" labelExtra={<ConfidenceDot confidence={fieldConfidence?.lat} />} error={touched.lat ? errors.lat : undefined}>
                     <Input value={data.lat} onChange={v => set('lat', v)} onBlur={() => touch('lat')} placeholder="39.0840" hasError={!!(touched.lat && errors.lat)} />
                   </Field>
-                  <Field label="Longitude *" error={touched.lng ? errors.lng : undefined}>
+                  <Field label="Longitude *" labelExtra={<ConfidenceDot confidence={fieldConfidence?.lng} />} error={touched.lng ? errors.lng : undefined}>
                     <Input value={data.lng} onChange={v => set('lng', v)} onBlur={() => touch('lng')} placeholder="-77.1528" hasError={!!(touched.lng && errors.lng)} />
                   </Field>
                 </Row>
+                {sourceFilename && !data.lat && !data.lng && (
+                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>Coordinates were not found in the document — enter manually or geocode the address.</div>
+                )}
               </Section>
 
               <Section title="Tower Details">
                 <Row>
-                  <Field label="Tower Type" error={undefined}>
+                  <Field label="Tower Type" labelExtra={<ConfidenceDot confidence={fieldConfidence?.tower_type} />} error={undefined}>
                     <Select value={data.tower_type} onChange={v => set('tower_type', v)} options={[
                       { value: 'monopole', label: 'Monopole' },
                       { value: 'lattice', label: 'Lattice' },
@@ -229,12 +255,12 @@ export default function AddSiteDrawer({ open, onClose, onSaved, owners }: Props)
                       { value: 'small_cell', label: 'Small Cell' },
                     ]} />
                   </Field>
-                  <Field label="Height (ft)" error={touched.height_ft ? errors.height_ft : undefined}>
+                  <Field label="Height (ft)" labelExtra={<ConfidenceDot confidence={fieldConfidence?.height_ft} />} error={touched.height_ft ? errors.height_ft : undefined}>
                     <Input value={data.height_ft} onChange={v => set('height_ft', v)} onBlur={() => touch('height_ft')} placeholder="180" hasError={!!(touched.height_ft && errors.height_ft)} />
                   </Field>
                 </Row>
-                <Field label="Host Agency" error={undefined} full>
-                  <Select value={data.host_agency_id} onChange={v => set('host_agency_id', v)} options={[{ value: '', label: 'Select agency…' }, ...owners.map(o => ({ value: o.id, label: o.name }))]} />
+                <Field label={`Site ${ownerSingular}`} error={undefined} full>
+                  <Select value={data.host_agency_id} onChange={v => set('host_agency_id', v)} options={[{ value: '', label: `Select ${ownerSingular.toLowerCase()}…` }, ...owners.map(o => ({ value: o.id, label: o.name }))]} />
                 </Field>
               </Section>
 
@@ -279,10 +305,10 @@ function Section({ title, children, last }: { title: string; children: React.Rea
 function Row({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'flex', gap: '10px' }}>{children}</div>
 }
-function Field({ label, error, children, full }: { label: string; error?: string; children: React.ReactNode; full?: boolean }) {
+function Field({ label, error, children, full, labelExtra }: { label: string; error?: string; children: React.ReactNode; full?: boolean; labelExtra?: React.ReactNode }) {
   return (
     <div style={{ flex: full ? '1 1 100%' : '1 1 0', minWidth: 0 }}>
-      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>{label}</label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>{label}{labelExtra}</label>
       {children}
       {error && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>

@@ -1,6 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { getSupabase } from '@/lib/supabase'
+import { getProfile } from '@/lib/profile'
+import { scopeFromProfile, isSiteVisible } from '@/lib/orgScope'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
@@ -9,6 +11,8 @@ import SiteEditForm from '@/components/sites/SiteEditForm'
 export default async function EditSitePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = getSupabase()
+  const scope = scopeFromProfile(await getProfile())
+  if (!(await isSiteVisible(id, scope))) notFound()
 
   const [{ data: site }, { data: agencies }] = await Promise.all([
     supabase.from('tower_sites').select('*').eq('id', id).single(),

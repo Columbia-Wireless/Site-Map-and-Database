@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase, getServiceClient } from '@/lib/supabase'
 import { getActorInfo, logChange } from '@/lib/audit'
+import { assertSiteVisible } from '@/lib/orgScope'
 
 // ── DELETE /api/sites/[id]/media/[mediaId] ───────────────────────────────────
 export async function DELETE(
@@ -9,6 +10,7 @@ export async function DELETE(
 ) {
   try {
     const { id, mediaId } = await params
+    if (!(await assertSiteVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const supabase = getSupabase()
 
     // Fetch the full record before deleting — needed for audit log and storage path
@@ -60,7 +62,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; mediaId: string }> }
 ) {
   try {
-    const { mediaId } = await params
+    const { id, mediaId } = await params
+    if (!(await assertSiteVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const { description } = await req.json()
     const supabase = getSupabase()
     const { error } = await supabase

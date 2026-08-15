@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
-import { ShieldCheck, ShieldOff, Loader2, AlertCircle, CheckCircle2, Copy } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { ShieldCheck, ShieldOff, ShieldAlert, Loader2, AlertCircle, CheckCircle2, Copy } from 'lucide-react'
 import Image from 'next/image'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneusqgcwxwkix.supabase.co'
@@ -11,7 +12,17 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGci
 type Step = 'idle' | 'enrolling' | 'confirming' | 'done'
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageInner />
+    </Suspense>
+  )
+}
+
+function SettingsPageInner() {
   const supabase = createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  const searchParams = useSearchParams()
+  const mfaRequired = searchParams.get('mfaRequired') === '1'
 
   const [userEmail, setUserEmail]   = useState('')
   const [enrolled, setEnrolled]     = useState(false)
@@ -41,7 +52,7 @@ export default function SettingsPage() {
   async function startEnroll() {
     setLoading(true)
     setError('')
-    const { data, error: err } = await supabase.auth.mfa.enroll({ factorType: 'totp', issuer: 'SCETV Site Management' })
+    const { data, error: err } = await supabase.auth.mfa.enroll({ factorType: 'totp', issuer: 'Columbia Wireless Site Asset Management' })
     setLoading(false)
     if (err || !data) { setError(err?.message ?? 'Failed to start enrollment'); return }
     setQrCode(data.totp.qr_code)
@@ -96,6 +107,19 @@ export default function SettingsPage() {
     <div style={{ padding: '32px', maxWidth: '640px' }}>
       <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#0f172a', margin: '0 0 4px' }}>Account Settings</h1>
       <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 28px' }}>{userEmail}</p>
+
+      {mfaRequired && !enrolled && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', gap: '10px',
+          background: '#fffbeb', border: '1px solid #fde68a',
+          borderRadius: '10px', padding: '14px 16px', marginBottom: '20px',
+        }}>
+          <ShieldAlert size={16} color="#b45309" style={{ flexShrink: 0, marginTop: '1px' }} />
+          <div style={{ fontSize: '13px', color: '#92400e', lineHeight: 1.5 }}>
+            <strong>Two-factor authentication is required for your role.</strong> Enable it below to continue using the platform.
+          </div>
+        </div>
+      )}
 
       {/* MFA Card */}
       <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>

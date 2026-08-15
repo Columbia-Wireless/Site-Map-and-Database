@@ -10,11 +10,19 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, Legend, Cell,
 } from 'recharts'
+import { useOrgLabel } from '@/contexts/OrgLabelContext'
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
 
 const fmtK = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(0)}K` : fmt(n)
+
+function csvEscape(v: any): string {
+  if (v == null) return ''
+  const s = String(v)
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
 
 interface OwnerOption { id: string; name: string }
 
@@ -59,6 +67,7 @@ const REPORTS = [
 ]
 
 export default function ReportsClient({ tenancies, owners }: { tenancies: TenancyRow[]; owners: OwnerOption[] }) {
+  const { ownerSingular, ownerPlural } = useOrgLabel()
   const [generating, setGenerating] = useState<string | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [ownerFilter, setOwnerFilter] = useState<string>('all')
@@ -91,14 +100,14 @@ export default function ReportsClient({ tenancies, owners }: { tenancies: Tenanc
       <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px 20px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#64748b', fontSize: '13px', fontWeight: 600 }}>
-            <Filter size={14} /> Filter by Agency:
+            <Filter size={14} /> Filter by {ownerSingular}:
           </div>
           <select
             value={ownerFilter}
             onChange={e => { setOwnerFilter(e.target.value); setPreview(null) }}
             style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: '7px', fontSize: '13px', background: 'white', cursor: 'pointer', color: '#0f172a' }}
           >
-            <option value="all">All Agencies ({tenancies.length} licenses)</option>
+            <option value="all">All {ownerPlural} ({tenancies.length} licenses)</option>
             {owners.map(o => {
               const count = tenancies.filter(t => (t.tower_sites as any)?.state_agencies?.id === o.id).length
               return <option key={o.id} value={o.id}>{o.name} ({count})</option>
@@ -175,7 +184,7 @@ function printLeaseTimeline() {
       svg{width:100%;height:auto;display:block;}
       @page{size:landscape;margin:10mm;}
     </style></head><body>
-    <h2>SCETV Site Management — Lease Timeline</h2>
+    <h2>Columbia Wireless Site Asset Management — Lease Timeline</h2>
     <p>Each bar = one lease · Width = term · Height = relative rent · Solid = active · Dashed = today</p>
     <div class="legend">${legendHtml}</div>
     ${svg.outerHTML}
@@ -189,6 +198,7 @@ function printLeaseTimeline() {
 }
 
 function ReportPreview({ id, tenancies, ownerName, onClose }: { id: string; tenancies: TenancyRow[]; ownerName: string | null; onClose: () => void }) {
+  const { ownerSingular } = useOrgLabel()
   const report = REPORTS.find(r => r.id === id)!
   const now = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
   const content: Record<string, React.ReactNode> = {
@@ -207,13 +217,21 @@ function ReportPreview({ id, tenancies, ownerName, onClose }: { id: string; tena
     <div id="report-print-area" style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
       <div style={{ background: '#1a3a5c', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px', marginBottom: '2px' }}>SCETV SITE MANAGEMENT · Columbia Wireless</div>
+          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px', marginBottom: '2px' }}>COLUMBIA WIRELESS SITE ASSET MANAGEMENT · powered by VeriPura</div>
           <div style={{ color: 'white', fontSize: '16px', fontWeight: 700 }}>{report.title}</div>
           <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', marginTop: '2px' }}>
             Generated {now}{ownerName ? ` · ${ownerName}` : ''}
           </div>
         </div>
         <div className="report-no-print" style={{ display: 'flex', gap: '10px' }}>
+          {id !== 'lease_timeline' && (
+            <button
+              onClick={() => triggerCsvDownload(id, tenancies, ownerName, ownerSingular)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(22,163,74,0.25)', color: '#86efac', border: '1px solid rgba(134,239,172,0.4)', borderRadius: '6px', padding: '7px 14px', fontSize: '13px', cursor: 'pointer' }}
+            >
+              <Download size={14} /> Export CSV
+            </button>
+          )}
           <button
             onClick={() => id === 'lease_timeline' ? printLeaseTimeline() : window.print()}
             style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.15)', color: 'white', border: '1px solid rgba(255,255,255,0.3)', borderRadius: '6px', padding: '7px 14px', fontSize: '13px', cursor: 'pointer' }}
@@ -279,6 +297,7 @@ function RentRollReport({ tenancies }: { tenancies: TenancyRow[] }) {
 // ─── Report: Rent by Month ────────────────────────────────────────────────────
 
 function RentByMonthReport({ tenancies }: { tenancies: TenancyRow[] }) {
+  const { ownerSingular } = useOrgLabel()
   const now = new Date()
   const [selMonth, setSelMonth] = useState(now.getMonth() + 1)
   const [selYear,  setSelYear]  = useState(now.getFullYear())
@@ -360,7 +379,7 @@ function RentByMonthReport({ tenancies }: { tenancies: TenancyRow[] }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', marginTop: '20px' }}>
         <thead>
           <tr style={{ borderBottom: '2px solid #1a3a5c' }}>
-            {['Host Agency', 'Site', 'Carrier', 'Status', `${MONTHS_FULL[selMonth - 1]} Rent`].map(h => (
+            {[`Site ${ownerSingular}`, 'Site', 'Carrier', 'Status', `${MONTHS_FULL[selMonth - 1]} Rent`].map(h => (
               <th key={h} style={thStyle}>{h}</th>
             ))}
           </tr>
@@ -1106,6 +1125,155 @@ function LeaseTimelineReport({ tenancies }: { tenancies: TenancyRow[] }) {
       </div>
     </div>
   )
+}
+
+// ─── CSV export ───────────────────────────────────────────────────────────────
+
+function getReportCsv(id: string, tenancies: TenancyRow[], ownerLabel: string = 'Owner'): { filename: string; csv: string } | null {
+  const now = new Date()
+  const toRow = (arr: any[]) => arr.map(csvEscape).join(',')
+
+  switch (id) {
+    case 'rent_roll': {
+      const rows = [...tenancies.filter(t => ['active','pending','expiring_soon'].includes(t.status))]
+        .sort((a, b) => (a.tower_sites?.site_code ?? '').localeCompare(b.tower_sites?.site_code ?? ''))
+      const hdr = ['Site Code','Site Name','Licensee','Mount Type','Annual Rent','Escalation %','License Start','License End','Status']
+      const lines = rows.map(t => toRow([
+        t.tower_sites?.site_code, t.tower_sites?.name, t.licensees?.name,
+        t.mount_type, t.annual_rent, t.escalation_rate, t.license_start, t.license_end, t.status,
+      ]))
+      return { filename: 'rent-roll', csv: [hdr.join(','), ...lines].join('\n') }
+    }
+
+    case 'rent_by_month': {
+      const month = now.getMonth() + 1
+      const year  = now.getFullYear()
+      const mS    = new Date(year, month - 1, 1)
+      const mE    = new Date(year, month, 0)
+      const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+      const rows = tenancies
+        .filter(t => Number(t.annual_rent) > 0 && t.license_start && t.license_end &&
+          new Date(t.license_start) <= mE && new Date(t.license_end) >= mS)
+        .sort((a, b) => (a.tower_sites?.site_code ?? '').localeCompare(b.tower_sites?.site_code ?? ''))
+      const hdr = ['Month','Site Code','Site Name',`Site ${ownerLabel}`,'Licensee','Status','Monthly Rent','Annual Rent']
+      const lines = rows.map(t => toRow([
+        `${MONTHS[month-1]} ${year}`,
+        t.tower_sites?.site_code, t.tower_sites?.name,
+        (t.tower_sites as any)?.state_agencies?.name ?? '',
+        t.licensees?.name, t.status,
+        (Number(t.annual_rent) / 12).toFixed(2), t.annual_rent,
+      ]))
+      return { filename: `rent-by-month-${year}-${String(month).padStart(2,'0')}`, csv: [hdr.join(','), ...lines].join('\n') }
+    }
+
+    case 'expired_contracts': {
+      const rows = [...tenancies.filter(t => ['expired','terminated'].includes(t.status) && Number(t.annual_rent) > 0)]
+        .sort((a, b) => new Date(b.license_end).getTime() - new Date(a.license_end).getTime())
+      const hdr = ['Site Code','Site Name','Licensee','Status','Expired','Years Lapsed','Last Annual Rent','Est. Uncollected']
+      const lines = rows.map(t => {
+        const yrs = Math.max(0, (now.getTime() - new Date(t.license_end).getTime()) / (365.25*24*3600*1000))
+        return toRow([
+          t.tower_sites?.site_code, t.tower_sites?.name, t.licensees?.name,
+          t.status, t.license_end, yrs.toFixed(1), t.annual_rent,
+          Math.round(Number(t.annual_rent) * yrs),
+        ])
+      })
+      return { filename: 'expired-contracts', csv: [hdr.join(','), ...lines].join('\n') }
+    }
+
+    case 'projected_revenue': {
+      const active = [...tenancies.filter(t => ['active','pending','expiring_soon'].includes(t.status))]
+        .sort((a, b) => (a.tower_sites?.site_code ?? '').localeCompare(b.tower_sites?.site_code ?? ''))
+      const curY  = now.getFullYear()
+      const years = Array.from({ length: 6 }, (_, i) => curY + i)
+      const proj  = (t: TenancyRow, y: number) => {
+        if (!t.license_end || y > new Date(t.license_end).getFullYear()) return 0
+        const sY = t.license_start ? new Date(t.license_start).getFullYear() : y
+        return Math.round(Number(t.annual_rent) * Math.pow(1 + Number(t.escalation_rate ?? 3)/100, Math.max(0, y - sY)))
+      }
+      const hdr   = ['Site Code','Site Name','Licensee','Escalation %', ...years.map(String)]
+      const lines = active.map(t => toRow([
+        t.tower_sites?.site_code, t.tower_sites?.name, t.licensees?.name, t.escalation_rate,
+        ...years.map(y => proj(t, y)),
+      ]))
+      const totals = years.map(y => active.reduce((s, t) => s + proj(t, y), 0))
+      lines.push(toRow(['TOTAL','','','', ...totals]))
+      return { filename: 'projected-revenue', csv: [hdr.join(','), ...lines].join('\n') }
+    }
+
+    case 'comparables': {
+      const rows = tenancies
+        .filter(t => ['active','pending','expiring_soon'].includes(t.status) && Number(t.annual_rent) > 0)
+        .map(t => {
+          const cat   = categorizeLicensee(t.licensees?.name ?? '')
+          const bench = MARKET_BENCHMARKS.find(b => b.category === cat)
+          return { ...t, cat, bench, rent: Number(t.annual_rent), gap: bench ? Number(t.annual_rent) - bench.marketAvg : 0 }
+        })
+      const hdr = ['Site Code','Site Name','Licensee','Category','Current Annual Rent','Market Low','Market Avg','Market High','Annual Gap']
+      const lines = rows.map(r => toRow([
+        r.tower_sites?.site_code, r.tower_sites?.name, r.licensees?.name, r.cat,
+        r.rent, r.bench?.marketLow ?? '', r.bench?.marketAvg ?? '', r.bench?.marketHigh ?? '', r.gap,
+      ]))
+      return { filename: 'comparables', csv: [hdr.join(','), ...lines].join('\n') }
+    }
+
+    case 'value_added': {
+      const rows = tenancies
+        .filter(t => t.contract_type === 'settlement' ? Number(t.settlement_amount ?? 0) > 0 : Number(t.annual_rent) > 0)
+        .map(t => ({ ...t, ...computeLifetimeValue(t) }))
+        .sort((a, b) => (a.tower_sites?.site_code ?? '').localeCompare(b.tower_sites?.site_code ?? ''))
+      const hdr = ['Site Code','Site Name','Licensee','Type of Value','Commenced','Expires','Annual Rent','Amendment Delta','Settlement Amount','Value to Date','Lifetime Value']
+      const lines = rows.map(r => toRow([
+        r.tower_sites?.site_code, r.tower_sites?.name, r.licensees?.name,
+        CONTRACT_TYPE_META[r.contract_type]?.label ?? r.contract_type,
+        r.license_start, r.contract_type === 'settlement' ? '' : r.license_end,
+        r.annual_rent, r.amendment_delta ?? '', r.settlement_amount ?? '',
+        r.valueToDate, r.lifetimeValue,
+      ]))
+      return { filename: 'value-added', csv: [hdr.join(','), ...lines].join('\n') }
+    }
+
+    case 'expiry_calendar': {
+      const rows = [...tenancies.filter(t => ['active','pending','expiring_soon'].includes(t.status) && new Date(t.license_end) >= now)]
+        .sort((a, b) => new Date(a.license_end).getTime() - new Date(b.license_end).getTime())
+        .slice(0, 30)
+      const hdr = ['Site Code','Site Name','Licensee','License End','Days Until Expiry','Annual Rent']
+      const lines = rows.map(t => toRow([
+        t.tower_sites?.site_code, t.tower_sites?.name, t.licensees?.name, t.license_end,
+        Math.round((new Date(t.license_end).getTime() - now.getTime()) / 86400000),
+        t.annual_rent,
+      ]))
+      return { filename: 'expiry-calendar', csv: [hdr.join(','), ...lines].join('\n') }
+    }
+
+    case 'exceptions': {
+      const rows = [...tenancies.filter(t => !['active','pending'].includes(t.status))]
+        .sort((a, b) => a.status.localeCompare(b.status) || (a.tower_sites?.site_code ?? '').localeCompare(b.tower_sites?.site_code ?? ''))
+      const hdr = ['Site Code','Site Name','Licensee','Status','License End','Annual Rent','Notes']
+      const lines = rows.map(t => toRow([
+        t.tower_sites?.site_code, t.tower_sites?.name, t.licensees?.name,
+        t.status, t.license_end, t.annual_rent, t.notes ?? '',
+      ]))
+      return { filename: 'exceptions', csv: [hdr.join(','), ...lines].join('\n') }
+    }
+
+    default:
+      return null
+  }
+}
+
+function triggerCsvDownload(id: string, tenancies: TenancyRow[], ownerName: string | null, ownerLabel: string = 'Owner') {
+  const result = getReportCsv(id, tenancies, ownerLabel)
+  if (!result) return
+  const suffix  = ownerName ? `-${ownerName.replace(/\s+/g,'-').toLowerCase()}` : ''
+  const dateStr = new Date().toISOString().slice(0, 10)
+  const blob    = new Blob([result.csv], { type: 'text/csv;charset=utf-8;' })
+  const url     = URL.createObjectURL(blob)
+  const a       = document.createElement('a')
+  a.href        = url
+  a.download    = `${result.filename}${suffix}-${dateStr}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────

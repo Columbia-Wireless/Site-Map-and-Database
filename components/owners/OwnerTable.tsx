@@ -38,7 +38,8 @@ type OwnerRow = SiteOwner & {
 
 const selectStyle = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '7px', fontSize: '13px', background: 'white', cursor: 'pointer' }
 
-export default function OwnerTable({ owners }: { owners: OwnerRow[] }) {
+export default function OwnerTable({ owners, ownerLabel = 'Owner' }: { owners: OwnerRow[]; ownerLabel?: string }) {
+  const ownerLabelLower = ownerLabel.toLowerCase()
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -61,7 +62,7 @@ export default function OwnerTable({ owners }: { owners: OwnerRow[] }) {
   if (owners.length === 0) {
     return (
       <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '48px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
-        No owners on record. Add your first owner to get started.
+        No {ownerLabelLower}s on record. Add your first {ownerLabelLower} to get started.
       </div>
     )
   }
@@ -75,7 +76,7 @@ export default function OwnerTable({ owners }: { owners: OwnerRow[] }) {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search agencies, cities…"
+            placeholder={`Search ${ownerLabelLower}s, cities…`}
             style={{ width: '100%', paddingLeft: '32px', paddingRight: '12px', paddingTop: '8px', paddingBottom: '8px', border: '1px solid #e2e8f0', borderRadius: '7px', fontSize: '14px', background: 'white', outline: 'none', boxSizing: 'border-box' }}
           />
         </div>
@@ -89,7 +90,7 @@ export default function OwnerTable({ owners }: { owners: OwnerRow[] }) {
           <option value="inactive">Inactive</option>
         </select>
         <div style={{ marginLeft: 'auto', fontSize: '13px', color: '#64748b' }}>
-          {filtered.length} of {owners.length} agencies
+          {filtered.length} of {owners.length} {ownerLabelLower}s
         </div>
       </div>
 
@@ -107,7 +108,7 @@ export default function OwnerTable({ owners }: { owners: OwnerRow[] }) {
             {filtered.length === 0 ? (
               <tr>
                 <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8', fontSize: '14px' }}>
-                  No agencies match your filters.
+                  No {ownerLabelLower}s match your filters.
                 </td>
               </tr>
             ) : filtered.map((owner, i) => {

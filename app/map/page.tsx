@@ -2,14 +2,19 @@ export const dynamic = 'force-dynamic'
 
 import { Suspense } from 'react'
 import { getSupabase } from '@/lib/supabase'
+import { getProfile } from '@/lib/profile'
+import { scopeFromProfile, scopeSitesQuery } from '@/lib/orgScope'
 import MapClient from '@/components/map/MapClient'
 
 export default async function MapPage() {
   const supabase = getSupabase()
-  const { data: sites } = await supabase
-    .from('tower_sites')
-    .select('id, site_code, name, city, state, lat, lng, status, tower_type, site_licenses(annual_rent, status, license_end, licensees(name))')
-    .order('site_code')
+  const scope = scopeFromProfile(await getProfile())
+  const { data: sites } = await scopeSitesQuery(
+    supabase
+      .from('tower_sites')
+      .select('id, site_code, name, city, state, lat, lng, status, tower_type, site_licenses(annual_rent, status, license_end, licensees(name))'),
+    scope,
+  ).order('site_code')
 
   const now = Date.now()
 

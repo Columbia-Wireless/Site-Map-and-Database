@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getActorInfo, logChange } from '@/lib/audit'
+import { getProfile } from '@/lib/profile'
+import { scopeFromProfile, isSiteVisible } from '@/lib/orgScope'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const scope = scopeFromProfile(await getProfile())
+    if (!(await isSiteVisible(id, scope))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
     const supabase = getSupabase()
     const { data, error } = await supabase.from('tower_sites').select('*').eq('id', id).single()
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
@@ -17,6 +22,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const scope = scopeFromProfile(await getProfile())
+    if (!(await isSiteVisible(id, scope))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
     const body = await req.json()
     const supabase = getSupabase()
     const actor = await getActorInfo()

@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { getSupabase } from '@/lib/supabase'
+import { assertLicenseeVisible } from '@/lib/orgScope'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
@@ -8,6 +9,7 @@ import TenantForm from '@/components/tenants/TenantForm'
 
 export default async function EditTenantPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  if (!(await assertLicenseeVisible(id))) notFound()
   const supabase = getSupabase()
 
   const { data: tenant } = await supabase.from('licensees').select('*').eq('id', id).single()

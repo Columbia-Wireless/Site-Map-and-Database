@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getCallerName } from '@/lib/logDocEvent'
+import { assertSiteVisible } from '@/lib/orgScope'
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneusqgcwxwkix.supabase.co'
@@ -12,6 +13,7 @@ function getSupabaseAdmin() {
 export async function GET(req: NextRequest) {
   const siteId = req.nextUrl.searchParams.get('site_id')
   if (!siteId) return NextResponse.json({ error: 'site_id required' }, { status: 400 })
+  if (!(await assertSiteVisible(siteId))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const supabase = getSupabaseAdmin()
   const { data, error } = await supabase
@@ -41,6 +43,7 @@ export async function POST(req: NextRequest) {
     if (!file || !siteId) {
       return NextResponse.json({ error: 'file and site_id required' }, { status: 400 })
     }
+    if (!(await assertSiteVisible(siteId))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const ext = file.name.split('.').pop() ?? 'jpg'
     const path = `photos/${siteId}/${Date.now()}.${ext}`
@@ -87,9 +90,11 @@ export async function DELETE(req: NextRequest) {
 
   const { data: photo } = await supabase
     .from('site_photos')
-    .select('storage_path')
+    .select('storage_path, site_id')
     .eq('id', photoId)
     .single()
+
+  if (!photo || !(await assertSiteVisible(photo.site_id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   if (photo?.storage_path) {
     await supabase.storage.from('site-media').remove([photo.storage_path])

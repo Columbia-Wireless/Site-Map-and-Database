@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getProfile, canExport } from '@/lib/profile'
+import { scopeFromProfile, scopeSitesQuery, isAgencyVisible } from '@/lib/orgScope'
 
 export async function GET(
   _req: NextRequest,
@@ -10,8 +11,10 @@ export async function GET(
   if (!canExport(profile)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  const scope = scopeFromProfile(profile)
 
   const { id } = await params
+  if (!(await isAgencyVisible(id, scope))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const supabase = getSupabase()
 
   // Agency name for filename
@@ -22,19 +25,21 @@ export async function GET(
     .single()
 
   // Sites for this agency + their licenses
-  const { data: sites, error } = await supabase
-    .from('tower_sites')
-    .select(`
-      id, site_code, name, address, city, state, zip, county,
-      tower_type, height_ft, status, lat, lng, tenant_slots, notes,
-      site_licenses(
-        id, status, annual_rent, escalation_rate,
-        license_start, license_end, contract_type, invoice_method,
-        licensees(name)
-      )
-    `)
-    .eq('host_agency_id', id)
-    .order('site_code')
+  const { data: sites, error } = await scopeSitesQuery(
+    supabase
+      .from('tower_sites')
+      .select(`
+        id, site_code, name, address, city, state, zip, county,
+        tower_type, height_ft, status, lat, lng, tenant_slots, notes,
+        site_licenses(
+          id, status, annual_rent, escalation_rate,
+          license_start, license_end, contract_type, invoice_method,
+          licensees(name)
+        )
+      `)
+      .eq('host_agency_id', id),
+    scope,
+  ).order('site_code')
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getActorName, logChange } from '@/lib/audit'
+import { assertSiteVisible } from '@/lib/orgScope'
 
 const FIELD_LABELS: Record<string, string> = {
   annual_rent: 'Annual Rent', escalation_rate: 'Escalation Rate', status: 'Status',
@@ -12,6 +13,7 @@ const FIELD_LABELS: Record<string, string> = {
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; tenancyId: string }> }) {
   try {
     const { id, tenancyId } = await params
+    if (!(await assertSiteVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const body = await req.json()
     const supabase = getSupabase()
 
@@ -65,6 +67,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string; tenancyId: string }> }) {
   try {
     const { id, tenancyId } = await params
+    if (!(await assertSiteVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const supabase = getSupabase()
 
     const { data: existing } = await supabase

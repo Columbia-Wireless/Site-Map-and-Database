@@ -1,19 +1,36 @@
 export const dynamic = 'force-dynamic'
 
 import { getSupabase } from '@/lib/supabase'
+import { getProfile } from '@/lib/profile'
+import { scopeFromProfile, getVisibleSiteIds } from '@/lib/orgScope'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import OwnerTable from '@/components/owners/OwnerTable'
 
 export default async function OwnersPage() {
   const supabase = getSupabase()
+  const profile = await getProfile()
+  const scope = scopeFromProfile(profile)
+  const singular = profile?.owner_label_singular ?? 'Owner'
+  const plural = profile?.owner_label_plural ?? 'Owners'
 
-  const { data: owners } = await supabase
+  const { data: rawOwners } = await supabase
     .from('state_agencies')
     .select('*, tower_sites(id, site_licenses(annual_rent, status))')
     .order('name')
 
-  const enriched = (owners ?? []).map((owner: any) => {
+  // Host agencies are a shared reference table — only show agencies with at
+  // least one site visible to this org, trimmed to that visible set.
+  const visibleSiteIds = await getVisibleSiteIds(scope)
+  const visibleSet = visibleSiteIds ? new Set(visibleSiteIds) : null
+  const owners = (rawOwners ?? [])
+    .map((o: any) => ({
+      ...o,
+      tower_sites: visibleSet ? (o.tower_sites ?? []).filter((s: any) => visibleSet.has(s.id)) : o.tower_sites,
+    }))
+    .filter((o: any) => !visibleSet || o.tower_sites.length > 0)
+
+  const enriched = owners.map((owner: any) => {
     const sites: any[] = owner.tower_sites ?? []
     const site_count = sites.length
     const activeSiteIds = new Set(
@@ -41,9 +58,9 @@ export default async function OwnersPage() {
     <div style={{ padding: '32px', maxWidth: '1300px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px' }}>
         <div>
-          <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', margin: 0 }}>Host Agencies</h1>
+          <h1 style={{ fontSize: '22px', fontWeight: 700, color: '#0f172a', margin: 0 }}>Site {plural}</h1>
           <p style={{ color: '#64748b', marginTop: '4px', fontSize: '14px' }}>
-            {enriched.length} agency{enriched.length !== 1 ? 's' : ''} on record
+            {enriched.length} {enriched.length !== 1 ? plural.toLowerCase() : singular.toLowerCase()} on record
           </p>
         </div>
         <Link href="/owners/new" style={{ textDecoration: 'none' }}>
@@ -53,11 +70,11 @@ export default async function OwnersPage() {
             borderRadius: '8px', padding: '10px 18px',
             fontSize: '14px', fontWeight: 600, cursor: 'pointer',
           }}>
-            <Plus size={16} /> Add Agency
+            <Plus size={16} /> Add {singular}
           </button>
         </Link>
       </div>
-      <OwnerTable owners={enriched} />
+      <OwnerTable owners={enriched} ownerLabel={singular} />
     </div>
   )
 }

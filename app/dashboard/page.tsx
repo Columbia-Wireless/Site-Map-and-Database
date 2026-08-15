@@ -1,6 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { getSupabase } from '@/lib/supabase'
+import { getProfile } from '@/lib/profile'
+import { scopeFromProfile, scopeSitesQuery, type OrgScope } from '@/lib/orgScope'
 import { DollarSign, MapPin, AlertTriangle, TrendingUp } from 'lucide-react'
 import RevenueChart from '@/components/dashboard/RevenueChart'
 import StatusBreakdown from '@/components/dashboard/StatusBreakdown'
@@ -8,13 +10,15 @@ import ExpiryTimeline from '@/components/dashboard/ExpiryTimeline'
 import RecentActivity from '@/components/dashboard/RecentActivity'
 import OwnerRevenueChart from '@/components/dashboard/OwnerRevenueChart'
 
-async function getMetrics() {
+async function getMetrics(scope: OrgScope) {
   const supabase = getSupabase()
 
-  const [{ data: sites }, { data: tenancies }] = await Promise.all([
-    supabase.from('tower_sites').select('id, state'),
-    supabase.from('site_licenses').select('site_id, annual_rent, license_end, status, tower_sites(state, host_agency_id, state_agencies(id, name))'),
-  ])
+  const sitesQuery = scopeSitesQuery(supabase.from('tower_sites').select('id, state'), scope)
+  const tenanciesQuery = scope.isPlatformAdmin
+    ? supabase.from('site_licenses').select('site_id, annual_rent, license_end, status, tower_sites(state, host_agency_id, state_agencies(id, name))')
+    : supabase.from('site_licenses').select('site_id, annual_rent, license_end, status, tower_sites!inner(state, host_agency_id, organization_id, state_agencies(id, name))').eq('tower_sites.organization_id', scope.organizationId)
+
+  const [{ data: sites }, { data: tenancies }] = await Promise.all([sitesQuery, tenanciesQuery])
 
   if (!sites || !tenancies) return null
 
@@ -39,18 +43,20 @@ async function getMetrics() {
   return { total, activeSites, totalRevenue, avgRent, in90, tenancies }
 }
 
-async function getRecentChanges() {
+async function getRecentChanges(scope: OrgScope) {
   const supabase = getSupabase()
-  const { data } = await supabase
-    .from('site_change_log')
-    .select('*, tower_sites(site_code, name)')
-    .order('changed_at', { ascending: false })
-    .limit(8)
+  const query = scope.isPlatformAdmin
+    ? supabase.from('site_change_log').select('*, tower_sites(site_code, name)')
+    : supabase.from('site_change_log').select('*, tower_sites!inner(site_code, name, organization_id)').eq('tower_sites.organization_id', scope.organizationId)
+  const { data } = await query.order('changed_at', { ascending: false }).limit(8)
   return data || []
 }
 
 export default async function DashboardPage() {
-  const [metrics, recentChanges] = await Promise.all([getMetrics(), getRecentChanges()])
+  const profile = await getProfile()
+  const scope = scopeFromProfile(profile)
+  const ownerSingular = profile?.owner_label_singular ?? 'Owner'
+  const [metrics, recentChanges] = await Promise.all([getMetrics(scope), getRecentChanges(scope)])
   if (!metrics) return <div style={{ padding: '40px' }}>Unable to load data.</div>
 
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -111,7 +117,7 @@ export default async function DashboardPage() {
         <ChartCard title="License Expiry Timeline (Next 36 Months)">
           <ExpiryTimeline tenancies={metrics.tenancies as any} />
         </ChartCard>
-        <ChartCard title="Revenue by Agency">
+        <ChartCard title={`Revenue by ${ownerSingular}`}>
           <OwnerRevenueChart tenancies={metrics.tenancies as any} />
         </ChartCard>
       </div>

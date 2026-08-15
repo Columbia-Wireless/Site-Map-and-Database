@@ -115,11 +115,11 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
         </div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '900px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
           <thead>
             <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-              {['Licensee', 'Contract Type', 'Invoice', 'Mount Type', 'Height', 'Annual Rent', 'Escalation', 'License Start', 'License End', 'Status', ''].map(h => (
-                <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+              {['Licensee', 'Contract', 'Invoice', 'Mount', 'Ht.', 'Annual Rent', 'Esc.', 'Start', 'End', 'Status', ''].map(h => (
+                <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: '11px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -131,7 +131,7 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
 
               return (
                 <tr key={t.id} style={{ background: i % 2 === 0 ? 'white' : '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '11px 14px' }}>
+                  <td style={{ padding: '8px 10px' }}>
                     {t.licensee_id ? (
                       <Link href={`/tenants/${t.licensee_id}?from=/sites/${siteId}`} style={{ fontSize: '13px', fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}>
                         {t.licensees?.name ?? '—'}
@@ -140,12 +140,12 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
                       <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>{t.licensees?.name ?? '—'}</div>
                     )}
                     {t.notes && (
-                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.notes}>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.notes}>
                         {t.notes}
                       </div>
                     )}
                   </td>
-                  <td style={{ padding: '11px 14px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '8px 10px', fontSize: '12px', color: '#475569', whiteSpace: 'nowrap' }}>
                     {t.document_id && t.site_documents ? (
                       <button
                         onClick={() => setViewerDoc({ docId: t.document_id!, name: t.site_documents!.name })}
@@ -171,31 +171,31 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
                       </span>
                     )}
                   </td>
-                  <td style={{ padding: '11px 14px', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                  <td style={{ padding: '8px 10px', fontSize: '12px', color: '#64748b', whiteSpace: 'nowrap' }}>
                     {(!t.invoice_method || t.invoice_method === 'None') ? <span style={{ color: '#cbd5e1' }}>—</span> : t.invoice_method}
                   </td>
-                  <td style={{ padding: '11px 14px', fontSize: '13px', color: '#334155' }}>{t.mount_type}</td>
-                  <td style={{ padding: '11px 14px', fontSize: '13px', color: '#64748b' }}>
+                  <td style={{ padding: '8px 10px', fontSize: '13px', color: '#334155' }}>{t.mount_type}</td>
+                  <td style={{ padding: '8px 10px', fontSize: '13px', color: '#64748b' }}>
                     {t.antenna_height_ft != null ? `${t.antenna_height_ft} ft` : '—'}
                   </td>
-                  <td style={{ padding: '11px 14px', fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
+                  <td style={{ padding: '8px 10px', fontSize: '13px', fontWeight: 600, color: '#0f172a' }}>
                     {fmt(Number(t.annual_rent))}
                   </td>
-                  <td style={{ padding: '11px 14px', fontSize: '13px', color: '#64748b' }}>
+                  <td style={{ padding: '8px 10px', fontSize: '13px', color: '#64748b' }}>
                     {t.escalation_rate}%
                   </td>
-                  <td style={{ padding: '11px 14px', fontSize: '13px', color: '#64748b', whiteSpace: 'nowrap' }}>
-                    {new Date(t.license_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  <td style={{ padding: '8px 10px', fontSize: '13px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                    {new Date(t.license_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
                   </td>
-                  <td style={{ padding: '11px 14px', fontSize: '13px', whiteSpace: 'nowrap', color: daysToExpiry < 0 ? '#dc2626' : daysToExpiry <= 180 ? '#d97706' : '#334155', fontWeight: daysToExpiry <= 180 ? 600 : 400 }}>
-                    {new Date(t.license_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  <td style={{ padding: '8px 10px', fontSize: '13px', whiteSpace: 'nowrap', color: daysToExpiry < 0 ? '#dc2626' : daysToExpiry <= 180 ? '#d97706' : '#334155', fontWeight: daysToExpiry <= 180 ? 600 : 400 }}>
+                    {new Date(t.license_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
                   </td>
-                  <td style={{ padding: '11px 14px' }}>
+                  <td style={{ padding: '8px 10px' }}>
                     <span style={{ fontSize: '11px', fontWeight: 600, padding: '3px 8px', borderRadius: '12px', background: statusStyle.bg, color: statusStyle.color, whiteSpace: 'nowrap' }}>
                       {t.status === 'expiring_soon' ? 'Expiring Soon' : t.status.charAt(0).toUpperCase() + t.status.slice(1)}
                     </span>
                   </td>
-                  <td style={{ padding: '11px 14px' }}>
+                  <td style={{ padding: '8px 10px' }}>
                     <div style={{ display: 'flex', gap: '6px' }}>
                       {t.document_id && t.site_documents && (
                         <button
@@ -230,10 +230,10 @@ export default function SiteDetailTenancies({ siteId, tenants, tenantSlots }: Pr
           {tenancies.length > 1 && (
             <tfoot>
               <tr style={{ borderTop: '2px solid #e2e8f0', background: '#f8fafc' }}>
-                <td colSpan={5} style={{ padding: '10px 14px', fontSize: '12px', fontWeight: 600, color: '#64748b' }}>
+                <td colSpan={5} style={{ padding: '8px 10px', fontSize: '12px', fontWeight: 600, color: '#64748b' }}>
                   TOTAL ({tenancies.length} licensees)
                 </td>
-                <td style={{ padding: '10px 14px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                <td style={{ padding: '8px 10px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
                   {fmt(totalRevenue)}
                 </td>
                 <td colSpan={5} />

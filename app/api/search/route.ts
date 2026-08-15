@@ -23,9 +23,11 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('profiles').select('role, organization_id, organizations(is_platform_admin)').eq('id', user.id).single()
   const rank = ROLE_RANK[profile?.role ?? ''] ?? 0
   const isAdmin = rank >= 4
+  const isPlatformAdmin = !!(profile?.organizations as any)?.is_platform_admin
+  const userOrgId = profile?.organization_id
 
   const wild = `%${q}%`
   const LIMIT = 6
@@ -50,11 +52,12 @@ export async function GET(request: NextRequest) {
       .limit(LIMIT),
 
     isAdmin
-      ? createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
-          .from('profiles')
-          .select('id, full_name, role, organization_id')
-          .ilike('full_name', wild)
-          .limit(LIMIT)
+      ? (() => {
+          const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+          let q = adminClient.from('profiles').select('id, full_name, role, organization_id').ilike('full_name', wild).limit(LIMIT)
+          if (!isPlatformAdmin && userOrgId) q = q.eq('organization_id', userOrgId)
+          return q
+        })()
       : Promise.resolve({ data: [] }),
   ])
 
@@ -68,9 +71,16 @@ export async function GET(request: NextRequest) {
       authUsers.forEach(u => { emailMap[u.id] = u.email ?? '' })
       users = users.map(u => ({ ...u, email: emailMap[u.id] ?? '' }))
       // Also search by email if no profile name matches
-      if (users.length < LIMIT) {
+      // Email fallback only for platform admins — non-platform org admins get
+      // name-only search since auth.admin.listUsers() returns all orgs' users.
+      if (users.length < LIMIT && isPlatformAdmin) {
+        const visibleUserIds = new Set(users.map((u: any) => u.id))
         const emailMatches = authUsers
-          .filter(u => u.email?.toLowerCase().includes(q.toLowerCase()) && !users.find(p => p.id === u.id))
+          .filter(u => {
+            if (!u.email?.toLowerCase().includes(q.toLowerCase())) return false
+            if (visibleUserIds.has(u.id)) return false
+            return true
+          })
           .slice(0, LIMIT - users.length)
           .map(u => ({ id: u.id, full_name: null, email: u.email, role: null }))
         users = [...users, ...emailMatches]

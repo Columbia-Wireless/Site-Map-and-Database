@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getActorInfo } from '@/lib/audit'
+import { getProfile } from '@/lib/profile'
 
 export async function POST(req: NextRequest) {
   try {
+    const profile = await getProfile()
+    if (!profile?.organization_id) return NextResponse.json({ error: 'No organization on profile' }, { status: 403 })
+
     const body = await req.json()
     const supabase = getSupabase()
 
@@ -22,6 +26,10 @@ export async function POST(req: NextRequest) {
       height_ft: body.height_ft ? Number(body.height_ft) : null,
       status: body.status ?? 'operational',
       notes: body.notes ?? null,
+      // A site is always created in the creator's own organization — platform
+      // admins managing another org's data should switch org context, not be
+      // able to silently write into an org they're merely viewing.
+      organization_id: profile.organization_id,
     }
 
     const { data: site, error } = await supabase

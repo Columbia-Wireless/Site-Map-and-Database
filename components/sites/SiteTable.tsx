@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, ChevronUp, ChevronDown } from 'lucide-react'
 import { TowerSite } from '@/lib/types'
+import { useOrgLabel } from '@/contexts/OrgLabelContext'
 
 interface TenancySummary {
   id: string
@@ -59,6 +60,7 @@ function OccupancyBar({ occupied, slots }: { occupied: number; slots: number | n
 }
 
 export default function SiteTable({ sites }: { sites: TowerSiteRow[] }) {
+  const { ownerSingular } = useOrgLabel()
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [stateFilter, setStateFilter] = useState<string>('all')
@@ -200,7 +202,7 @@ export default function SiteTable({ sites }: { sites: TowerSiteRow[] }) {
                 {th('Name / Location', 'name')}
                 {th('State', 'state')}
                 {thStatic('Tower Type')}
-                {thStatic('Agency')}
+                {thStatic(ownerSingular)}
                 {th('Occupancy', 'occupancy_pct')}
                 {thStatic('Current Tenants')}
                 {th('Revenue / yr', 'total_revenue')}

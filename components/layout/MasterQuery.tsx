@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, MapPin, Building2, Landmark, Users, X, ArrowRight } from 'lucide-react'
+import { useOrgLabel } from '@/contexts/OrgLabelContext'
 
 interface SearchResults {
   sites:     { id: string; site_code: string; name: string; city: string; state: string; tower_type: string; status: string }[]
@@ -27,6 +28,7 @@ export default function MasterQuery() {
   const inputRef = useRef<HTMLInputElement>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const router = useRouter()
+  const { ownerSingular, ownerPlural } = useOrgLabel()
 
   // Ctrl+K / Cmd+K global shortcut
   useEffect(() => {
@@ -72,7 +74,7 @@ export default function MasterQuery() {
   const flat = [
     ...results.sites.map(r => ({ type: 'site', href: `/sites/${r.id}`, label: r.site_code, sub: `${r.name} · ${r.city}, ${r.state}`, tag: TYPE_LABELS[r.tower_type] ?? r.tower_type })),
     ...results.licensees.map(r => ({ type: 'licensee', href: `/tenants/${r.id}`, label: r.name, sub: r.hq_city && r.hq_state ? `${r.hq_city}, ${r.hq_state}` : 'Licensee', tag: r.status })),
-    ...results.agencies.map(r => ({ type: 'agency', href: `/owners/${r.id}`, label: r.name, sub: r.city && r.state ? `${r.city}, ${r.state}` : 'Host Agency', tag: r.type })),
+    ...results.agencies.map(r => ({ type: 'agency', href: `/owners/${r.id}`, label: r.name, sub: r.city && r.state ? `${r.city}, ${r.state}` : `Site ${ownerSingular}`, tag: r.type })),
     ...results.users.map(r => ({ type: 'user', href: `/admin/users`, label: r.full_name || r.email, sub: r.email, tag: r.role ?? '' })),
   ]
 
@@ -105,7 +107,7 @@ export default function MasterQuery() {
   function sectionLabel(type: string) {
     if (type === 'site')     return 'Sites'
     if (type === 'licensee') return 'Licensees'
-    if (type === 'agency')   return 'Host Agencies'
+    if (type === 'agency')   return `Site ${ownerPlural}`
     return 'Users'
   }
 

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { getSupabase } from '@/lib/supabase'
 import { getProfile } from '@/lib/profile'
+import { scopeFromProfile } from '@/lib/orgScope'
 import ReportsClient from '@/components/reports/ReportsClient'
 import SavedReports from '@/components/reports/SavedReports'
 
@@ -12,12 +13,19 @@ const ROLE_RANK: Record<string, number> = {
 export default async function ReportsPage() {
   const supabase = getSupabase()
   const profile  = await getProfile()
+  const scope    = scopeFromProfile(profile)
   const rank     = ROLE_RANK[profile?.role ?? ''] ?? 0
   const isAdmin  = rank >= 4
 
+  const tenanciesQuery = scope.isPlatformAdmin
+    ? supabase.from('site_licenses')
+        .select('*, tower_sites(id, site_code, name, state, address, city, host_agency_id, state_agencies(id, name)), licensees(id, name)')
+    : supabase.from('site_licenses')
+        .select('*, tower_sites!inner(id, site_code, name, state, address, city, host_agency_id, organization_id, state_agencies(id, name)), licensees(id, name)')
+        .eq('tower_sites.organization_id', scope.organizationId)
+
   const [{ data: tenancies }, { data: owners }, { data: allReports }] = await Promise.all([
-    supabase.from('site_licenses')
-      .select('*, tower_sites(id, site_code, name, state, address, city, host_agency_id, state_agencies(id, name)), licensees(id, name)'),
+    tenanciesQuery,
     supabase.from('state_agencies').select('id, name').eq('status', 'active').order('name'),
     supabase.from('saved_reports').select('*').order('created_at', { ascending: false }),
   ])

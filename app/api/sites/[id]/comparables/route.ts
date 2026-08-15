@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { assertSiteVisible } from '@/lib/orgScope'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneusqgcwxwkix.supabase.co'
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZmbnRwZHBuZXVzcWdjd3h3a2l4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NTg2MzEsImV4cCI6MjA5MzUzNDYzMX0.kFZ6b2WKAl7GVsEQZeO33qcxhyBruQlTfW0eZfkcg1c'
@@ -18,6 +19,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+  if (!(await assertSiteVisible(id))) return NextResponse.json({ error: 'Site not found' }, { status: 404 })
   const radius = Math.min(250, Math.max(1, parseInt(request.nextUrl.searchParams.get('radius') ?? '50')))
 
   const supabase = getSupabase()
@@ -25,7 +27,7 @@ export async function GET(
   // Fetch focal site
   const { data: focal, error: fErr } = await supabase
     .from('tower_sites')
-    .select('id, lat, lng, tower_type')
+    .select('id, lat, lng, tower_type, organization_id')
     .eq('id', id)
     .single()
 
@@ -34,10 +36,12 @@ export async function GET(
     return NextResponse.json({ comparables: [], message: 'Focal site has no coordinates' })
   }
 
-  // Fetch all other sites with license aggregates
+  // Fetch all other sites in the same organization with license aggregates —
+  // comparables are scoped to the focal site's own portfolio, never cross-client.
   const { data: sites, error: sErr } = await supabase
     .from('tower_sites')
     .select('id, site_code, name, city, state, tower_type, height_ft, lat, lng, tenant_slots, site_licenses(id, annual_rent, status)')
+    .eq('organization_id', focal.organization_id)
     .neq('id', id)
     .not('lat', 'is', null)
     .not('lng', 'is', null)

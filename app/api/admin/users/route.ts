@@ -38,6 +38,33 @@ const ROLE_RANK: Record<string, number> = {
   super_admin: 5, admin: 4, editor: 3, reporter: 2, viewer: 1,
 }
 
+/**
+ * Some organizations are restricted to a specific email domain — currently
+ * just VeriPura, for the platform vendor's own accounts (super_admin users
+ * managing the whole platform across client orgs). Hardcoded by org name
+ * rather than a dedicated column since this is a one-off rule today; worth
+ * promoting to a real organizations.restricted_email_domain column if more
+ * restricted orgs come along later.
+ */
+const RESTRICTED_ORG_DOMAINS: Record<string, string> = {
+  VeriPura: 'veripura.com',
+}
+
+/** Returns an error message if `email` isn't allowed into `organizationId`, else null. */
+async function assertOrgEmailAllowed(
+  admin: ReturnType<typeof getAdminClient>,
+  organizationId: string | null | undefined,
+  email: string,
+): Promise<string | null> {
+  if (!organizationId) return null
+  const { data: org } = await admin.from('organizations').select('name').eq('id', organizationId).single()
+  const requiredDomain = org?.name ? RESTRICTED_ORG_DOMAINS[org.name] : undefined
+  if (requiredDomain && !email.toLowerCase().endsWith(`@${requiredDomain}`)) {
+    return `Only @${requiredDomain} email addresses can be assigned to ${org!.name}.`
+  }
+  return null
+}
+
 /** GET /api/admin/users — list users with emails */
 export async function GET(request: NextRequest) {
   try {
@@ -76,13 +103,27 @@ export async function POST(request: NextRequest) {
 
     const admin = getAdminClient()
 
+    const orgEmailError = await assertOrgEmailAllowed(admin, organization_id, email)
+    if (orgEmailError) {
+      return NextResponse.json({ error: orgEmailError }, { status: 400 })
+    }
+
     // Send a proper invitation email — user clicks the link and sets their own password.
     // Supabase free tier allows up to 4 invite emails/hour via its built-in mail service.
     // redirectTo must be listed in Supabase Auth → URL Configuration → Redirect URLs.
+    //
+    // Routes through /auth/callback?next=/reset-password — same pattern as
+    // forgot-password/page.tsx uses for recovery links. This used to redirect
+    // straight to the bare site root, which broke: /reset-password is the
+    // only page that (a) is exempt from the proxy.ts auth-wall so the
+    // one-time invite session survives the redirect chain, and (b) actually
+    // renders a set-password form. Landing on root would get bounced to
+    // /login before the invite session was ever picked up.
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://tower-demo-461686768358.us-east1.run.app'
-    console.log('[invite] calling inviteUserByEmail for', email, 'redirectTo:', siteUrl)
+    const redirectTo = `${siteUrl}/auth/callback?next=/reset-password`
+    console.log('[invite] calling inviteUserByEmail for', email, 'redirectTo:', redirectTo)
     const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
-      redirectTo: siteUrl,
+      redirectTo,
     })
     if (inviteErr) {
       console.error('[invite] inviteUserByEmail failed:', inviteErr.message, inviteErr)
@@ -121,11 +162,24 @@ export async function PATCH(request: NextRequest) {
     const { id, role, organization_id, can_export } = await request.json()
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
+    const admin = getAdminClient()
+
+    // If the org is being changed, enforce any email-domain restriction on
+    // the target org (e.g. VeriPura is @veripura.com-only) before applying it.
+    if (organization_id !== undefined) {
+      const { data: { user: targetUser } } = await admin.auth.admin.getUserById(id)
+      if (targetUser?.email) {
+        const orgEmailError = await assertOrgEmailAllowed(admin, organization_id, targetUser.email)
+        if (orgEmailError) {
+          return NextResponse.json({ error: orgEmailError }, { status: 400 })
+        }
+      }
+    }
+
     if (role === 'super_admin' && profile.role !== 'super_admin') {
       return NextResponse.json({ error: 'Only super_admin can grant super_admin' }, { status: 403 })
     }
 
-    const admin = getAdminClient()
     const patch: Record<string, any> = {}
     if (role !== undefined) patch.role = role
     if (organization_id !== undefined) patch.organization_id = organization_id

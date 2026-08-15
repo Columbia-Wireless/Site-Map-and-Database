@@ -84,11 +84,14 @@ export default function TowerMap({ sites, focusLat, focusLng, focusSiteCode, lic
       shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
     })
 
-    const defaultCenter: [number, number] = [34.0007, -81.0341]
-    const defaultZoom = 8
+    // Fallback view only — used until the fit-to-sites logic below adjusts it.
+    // Geographic center of the contiguous US, not South Carolina-specific,
+    // since sites can now come from any state/org.
+    const fallbackCenter: [number, number] = [39.8283, -98.5795]
+    const fallbackZoom = 4
     const map = L.map(mapRef.current, {
-      center: focusLat != null && focusLng != null ? [focusLat, focusLng] : defaultCenter,
-      zoom:   focusLat != null ? 14 : defaultZoom,
+      center: focusLat != null && focusLng != null ? [focusLat, focusLng] : fallbackCenter,
+      zoom:   focusLat != null ? 14 : fallbackZoom,
       zoomControl: true,
     })
 
@@ -114,6 +117,22 @@ export default function TowerMap({ sites, focusLat, focusLng, focusSiteCode, lic
       if (withCoords.length > 1) {
         const bounds = L.latLngBounds(withCoords.map((s: SitePinData) => [s.lat, s.lng]))
         map.fitBounds(bounds, { padding: [60, 60] })
+      } else if (withCoords.length === 1) {
+        map.setView([withCoords[0].lat, withCoords[0].lng], 12)
+      }
+    } else if (focusLat == null) {
+      // General view (no licensee filter, no specific site focus): fit to
+      // every site with coordinates instead of assuming South Carolina.
+      // Computed from the full `sites` list, not the occupancy-filtered
+      // `filtered` list, so toggling an occupancy filter chip doesn't yank
+      // the viewport around. Falls back to the US-wide fallbackCenter/Zoom
+      // set above when there are no geocoded sites at all yet.
+      const allWithCoords = sites.filter(s => s.lat != null && s.lng != null)
+      if (allWithCoords.length > 1) {
+        const bounds = L.latLngBounds(allWithCoords.map(s => [s.lat, s.lng] as [number, number]))
+        map.fitBounds(bounds, { padding: [60, 60] })
+      } else if (allWithCoords.length === 1) {
+        map.setView([allWithCoords[0].lat, allWithCoords[0].lng], 12)
       }
     }
 

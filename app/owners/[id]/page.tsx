@@ -8,6 +8,7 @@ import {
   AlertTriangle, TrendingUp, Building2, Pencil, Download,
 } from 'lucide-react'
 import { getProfile, canExport } from '@/lib/profile'
+import { scopeFromProfile, scopeSitesQuery } from '@/lib/orgScope'
 import OwnerDeleteButton from '@/components/owners/OwnerDeleteButton'
 import ContactsPanel from '@/components/contacts/ContactsPanel'
 import AuditDrawer from '@/components/shared/AuditDrawer'
@@ -39,16 +40,31 @@ export default async function OwnerDetailPage({ params }: { params: Promise<{ id
 
   const profile = await getProfile()
   const userCanExport = canExport(profile)
+  const scope = scopeFromProfile(profile)
+  const singular = profile?.owner_label_singular ?? 'Owner'
+  const plural = profile?.owner_label_plural ?? 'Owners'
 
   const [{ data: owner }, { data: sites }, { data: contactRows }] = await Promise.all([
     supabase.from('state_agencies').select('*').eq('id', id).single(),
-    supabase
-      .from('tower_sites')
-      .select('id, site_code, name, city, state, tower_type, status, site_licenses(id, annual_rent, license_end, status, licensees(name))')
-      .eq('host_agency_id', id)
-      .order('site_code'),
+    scopeSitesQuery(
+      supabase
+        .from('tower_sites')
+        .select('id, site_code, name, city, state, tower_type, status, site_licenses(id, annual_rent, license_end, status, licensees(name))')
+        .eq('host_agency_id', id),
+      scope,
+    ).order('site_code'),
     supabase.from('contacts').select('*').eq('entity_type', 'owner').eq('entity_id', id).order('contact_type'),
   ])
+
+  // Host agencies are a shared reference table — if this agency has sites
+  // but none are visible to the caller's org, treat as not found.
+  if (!scope.isPlatformAdmin) {
+    const { count: totalSiteCount } = await supabase
+      .from('tower_sites')
+      .select('id', { count: 'exact', head: true })
+      .eq('host_agency_id', id)
+    if ((totalSiteCount ?? 0) > 0 && (sites ?? []).length === 0) notFound()
+  }
 
   if (!owner) notFound()
 
@@ -82,7 +98,7 @@ export default async function OwnerDetailPage({ params }: { params: Promise<{ id
   return (
     <div style={{ padding: '32px', maxWidth: '1300px' }}>
       <Link href="/owners" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#64748b', fontSize: '14px', textDecoration: 'none', marginBottom: '20px' }}>
-        <ArrowLeft size={15} /> Back to Host Agencies
+        <ArrowLeft size={15} /> Back to Site {plural}
       </Link>
 
       {/* Header */}
@@ -120,7 +136,7 @@ export default async function OwnerDetailPage({ params }: { params: Promise<{ id
           <AuditDrawer entityId={id} entityType="owner" />
           <Link href={`/owners/${id}/edit`} style={{ textDecoration: 'none' }}>
             <button style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'white', color: '#1a3a5c', border: '1px solid #e2e8f0', borderRadius: '7px', padding: '9px 16px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-              <Pencil size={14} /> Edit Agency
+              <Pencil size={14} /> Edit {singular}
             </button>
           </Link>
           <OwnerDeleteButton ownerId={id} ownerName={owner.name} siteCount={allSites.length} />
@@ -190,7 +206,7 @@ export default async function OwnerDetailPage({ params }: { params: Promise<{ id
       {/* Contacts */}
       {(contactRows ?? []).length > 0 && (
         <div style={{ marginBottom: '28px' }}>
-          <ContactsPanel contacts={contactRows ?? []} />
+          <ContactsPanel contacts={contactRows ?? []} ownerLabel={singular} />
         </div>
       )}
 

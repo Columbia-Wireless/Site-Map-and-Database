@@ -6,10 +6,12 @@ import { Radio, Menu, X, ClipboardList } from 'lucide-react'
 import Sidebar from './Sidebar'
 import { MediaUploadProvider } from '@/contexts/MediaUploadContext'
 import GlobalUploadToast from './GlobalUploadToast'
+import { useOrgLabel } from '@/contexts/OrgLabelContext'
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
+  const { ownerPlural } = useOrgLabel()
   const isAuthPage = pathname === '/login' || pathname.startsWith('/auth')
   const isFieldPage = pathname.startsWith('/field')
 
@@ -34,7 +36,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
     const pageTitle = (() => {
       if (pathname.startsWith('/sites')) return 'Sites'
       if (pathname.startsWith('/tenants')) return 'Licensees'
-      if (pathname.startsWith('/owners')) return 'Host Agencies'
+      if (pathname.startsWith('/owners')) return `Site ${ownerPlural}`
       if (pathname.startsWith('/map')) return 'Map'
       if (pathname.startsWith('/reports')) return 'Reports'
       if (pathname.startsWith('/admin')) return 'Admin'

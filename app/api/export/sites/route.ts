@@ -1,25 +1,32 @@
 import { NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getProfile, canExport } from '@/lib/profile'
+import { scopeFromProfile, scopeSitesQuery, getVisibleSiteIds } from '@/lib/orgScope'
 
 export async function GET() {
   const profile = await getProfile()
   if (!canExport(profile)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  const scope = scopeFromProfile(profile)
 
   const supabase = getSupabase()
-  const { data: sites, error } = await supabase
-    .from('tower_sites')
-    .select('site_code, name, address, city, state, zip, county, tower_type, height_ft, status, lat, lng, tenant_slots, notes')
-    .order('name')
+  const { data: sites, error } = await scopeSitesQuery(
+    supabase
+      .from('tower_sites')
+      .select('site_code, name, address, city, state, zip, county, tower_type, height_ft, status, lat, lng, tenant_slots, notes'),
+    scope,
+  ).order('name')
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const { data: licenses } = await supabase
+  const visibleSiteIds = await getVisibleSiteIds(scope)
+  let licensesQuery = supabase
     .from('site_licenses')
     .select('site_id, annual_rent, escalation_rate, status, license_start, license_end, licensees(name)')
     .order('site_id')
+  if (visibleSiteIds) licensesQuery = licensesQuery.in('site_id', visibleSiteIds)
+  const { data: licenses } = await licensesQuery
 
   const rentBySite: Record<string, { licensees: string[]; totalRent: number }> = {}
   for (const lic of licenses ?? []) {
@@ -31,7 +38,7 @@ export async function GET() {
     }
   }
 
-  const { data: siteIds } = await supabase.from('tower_sites').select('id, site_code')
+  const { data: siteIds } = await scopeSitesQuery(supabase.from('tower_sites').select('id, site_code'), scope)
   const idByCode: Record<string, string> = {}
   for (const s of siteIds ?? []) idByCode[s.site_code] = s.id
 
@@ -41,7 +48,7 @@ export async function GET() {
     'Tenant Slots', 'Active Licensees', 'Annual Revenue ($)', 'Notes',
   ]
 
-  const rows = (sites ?? []).map(s => {
+  const rows = (sites ?? []).map((s: any) => {
     const siteId = idByCode[s.site_code]
     const rentData = siteId ? rentBySite[siteId] : null
     return [
@@ -65,7 +72,7 @@ export async function GET() {
   })
 
   const csv = [headers, ...rows]
-    .map(row => row.map(cell => `"${cell}"`).join(','))
+    .map(row => row.map((cell: any) => `"${cell}"`).join(','))
     .join('\r\n')
 
   return new NextResponse(csv, {

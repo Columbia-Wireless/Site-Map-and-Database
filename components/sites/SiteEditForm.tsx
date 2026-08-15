@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, CheckCircle } from 'lucide-react'
+import { useOrgLabel } from '@/contexts/OrgLabelContext'
 
 const US_STATES = [
   'AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN',
@@ -45,6 +46,7 @@ interface Props {
 }
 
 export default function SiteEditForm({ siteId, initial, agencies }: Props) {
+  const { ownerSingular } = useOrgLabel()
   const router = useRouter()
   const [data, setData] = useState<FormData>({
     site_code:      initial.site_code      ?? '',
@@ -146,7 +148,7 @@ export default function SiteEditForm({ siteId, initial, agencies }: Props) {
             <Input value={data.tenant_slots} onChange={v => set('tenant_slots', v)} placeholder="4" />
           </Field>
         </Row>
-        <Field label="Host Agency" full>
+        <Field label={`Site ${ownerSingular}`} full>
           <Select value={data.host_agency_id} onChange={v => set('host_agency_id', v)}
             options={[{ value: '', label: 'None' }, ...agencies.map(a => ({ value: a.id, label: a.name }))]} />
         </Field>

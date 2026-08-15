@@ -7,9 +7,28 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneu
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZmbnRwZHBuZXVzcWdjd3h3a2l4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NTg2MzEsImV4cCI6MjA5MzUzNDYzMX0.kFZ6b2WKAl7GVsEQZeO33qcxhyBruQlTfW0eZfkcg1c'
 
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/dashboard'
+
+  // Resolve the public-facing base URL for redirects — mirrors proxy.ts.
+  // request.url's origin reflects the container's internal bind address
+  // (http://0.0.0.0:8080) on Cloud Run, not the public URL, unless we
+  // reconstruct it from forwarding headers.
+  const SITE_URL = process.env.SITE_URL
+  const fwdHost  = request.headers.get('x-forwarded-host') || ''
+  const hostHdr  = request.headers.get('host') || ''
+  const fwdProto = request.headers.get('x-forwarded-proto') || 'https'
+
+  const resolvedHost =
+    fwdHost && !fwdHost.startsWith('0.0.0.0') ? fwdHost :
+    hostHdr && !hostHdr.startsWith('0.0.0.0') ? hostHdr :
+    null
+
+  const origin =
+    SITE_URL ||
+    (resolvedHost ? `${fwdProto}://${resolvedHost}` : null) ||
+    new URL(request.url).origin
 
   if (code) {
     const cookieStore = await cookies()

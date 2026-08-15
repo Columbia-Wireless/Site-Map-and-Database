@@ -1,12 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Radio, Loader2, AlertCircle } from 'lucide-react'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneusqgcwxwkix.supabase.co'
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZmbnRwZHBuZXVzcWdjd3h3a2l4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NTg2MzEsImV4cCI6MjA5MzUzNDYzMX0.kFZ6b2WKAl7GVsEQZeO33qcxhyBruQlTfW0eZfkcg1c'
+
+const URL_ERROR_MESSAGES: Record<string, string> = {
+  auth: 'Something went wrong signing you in. Please try again.',
+  not_provisioned: 'Your account isn’t set up on this platform yet. Contact your administrator to request access.',
+}
 
 export default function LoginPage() {
   const [email, setEmail]       = useState('')
@@ -16,6 +22,13 @@ export default function LoginPage() {
   const [msLoading, setMsLoading]     = useState(false)
   const [error, setError]             = useState('')
   const router = useRouter()
+
+  // Surface why someone got bounced back to /login (e.g. proxy.ts redirects
+  // with ?error=not_provisioned for an authenticated-but-unprovisioned user).
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('error')
+    if (code && URL_ERROR_MESSAGES[code]) setError(URL_ERROR_MESSAGES[code])
+  }, [])
 
   const supabase = createBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
@@ -34,7 +47,13 @@ export default function LoginPage() {
     setError('')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        // Without this, Google silently reuses whatever Google account is
+        // already active in the browser instead of showing the account
+        // chooser — surprising when someone has multiple Google accounts.
+        queryParams: { prompt: 'select_account' },
+      },
     })
     if (error) { setError(error.message); setGoogleLoading(false) }
   }
@@ -44,7 +63,10 @@ export default function LoginPage() {
     setError('')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        queryParams: { prompt: 'select_account' },
+      },
     })
     if (error) { setError(error.message); setMsLoading(false) }
   }
@@ -69,10 +91,10 @@ export default function LoginPage() {
           </div>
           <div>
             <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>
-              SCETV Site Management
+              Columbia Wireless Site Asset Management
             </div>
             <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
-              Columbia Wireless Facilities
+              powered by VeriPura
             </div>
           </div>
         </div>
@@ -179,9 +201,14 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
-              Password
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: '#374151' }}>
+                Password
+              </label>
+              <Link href="/forgot-password" style={{ fontSize: '12px', color: '#2563eb', textDecoration: 'none', fontWeight: 500 }}>
+                Forgot password?
+              </Link>
+            </div>
             <input
               type="password"
               value={password}

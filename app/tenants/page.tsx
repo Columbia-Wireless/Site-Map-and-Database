@@ -1,16 +1,31 @@
 export const dynamic = 'force-dynamic'
 
 import { getSupabase } from '@/lib/supabase'
+import { getProfile } from '@/lib/profile'
+import { scopeFromProfile, getVisibleSiteIds } from '@/lib/orgScope'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import TenantTable from '@/components/tenants/TenantTable'
 
 export default async function TenantsPage() {
   const supabase = getSupabase()
-  const { data: tenants } = await supabase
+  const scope = scopeFromProfile(await getProfile())
+  const { data: rawTenants } = await supabase
     .from('licensees')
-    .select('*, site_licenses(id, annual_rent, status)')
+    .select('*, site_licenses(id, annual_rent, status, site_id)')
     .order('name')
+
+  // Licensees are a shared reference table — only show licensees with at
+  // least one license on a site visible to this org, and trim their
+  // embedded site_licenses to that same visible set.
+  const visibleSiteIds = await getVisibleSiteIds(scope)
+  const visibleSet = visibleSiteIds ? new Set(visibleSiteIds) : null
+  const tenants = (rawTenants ?? [])
+    .map((t: any) => ({
+      ...t,
+      site_licenses: visibleSet ? (t.site_licenses ?? []).filter((sl: any) => visibleSet.has(sl.site_id)) : t.site_licenses,
+    }))
+    .filter((t: any) => !visibleSet || t.site_licenses.length > 0)
 
   return (
     <div style={{ padding: '32px', maxWidth: '1200px' }}>

@@ -9,6 +9,7 @@ import SiteDocsAndTerms from './SiteDocsAndTerms'
 import SiteRevenueHistory from './SiteRevenueHistory'
 import EquipmentPanel from './EquipmentPanel'
 import SiteComparables from './SiteComparables'
+import { useOrgLabel } from '@/contexts/OrgLabelContext'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ const FIELD_LABELS: Record<string, string> = {
 export default function SiteDetailTabs({
   site, changes: initialChanges, docs, tenants, allLicenses, userCanEdit, slots, occupiedCount, occupiedNames,
 }: Props) {
+  const { ownerSingular } = useOrgLabel()
   const [activeTab, setActiveTab] = useState('overview')
   const [uploadingMedia, setUploadingMedia] = useState(false)
   const [auditEntries, setAuditEntries] = useState<any[]>(initialChanges)
@@ -142,7 +144,7 @@ export default function SiteDetailTabs({
               <InfoRow label="Tower Type" value={TYPE_LABELS[site.tower_type] || site.tower_type || '—'} />
               {site.height_ft && <InfoRow label="Height" value={`${site.height_ft} ft`} />}
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f8fafc', fontSize: '13px' }}>
-                <span style={{ color: '#64748b' }}>Host Agency</span>
+                <span style={{ color: '#64748b' }}>Site {ownerSingular}</span>
                 {site.state_agencies ? (
                   <Link href={`/owners/${site.state_agencies.id}`} style={{ fontWeight: 500, color: '#2563eb', textDecoration: 'none' }}>
                     {site.state_agencies.name}

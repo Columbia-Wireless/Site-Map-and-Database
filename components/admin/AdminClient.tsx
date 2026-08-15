@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Database, Trash2, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react'
+import { useOrgLabel } from '@/contexts/OrgLabelContext'
 
 interface Counts {
   sites: number | null
@@ -19,18 +20,22 @@ interface Props {
   totalRows: number
 }
 
-const TABLE_LABELS: { key: keyof Counts; label: string; description: string }[] = [
-  { key: 'sites',      label: 'Tower Sites',    description: 'Site records, coordinates, status' },
-  { key: 'owners',     label: 'Host Agencies',  description: 'Host agency / landlord records' },
-  { key: 'tenants',    label: 'Licensees',      description: 'Carrier / licensee records' },
-  { key: 'tenancies',  label: 'Licenses',       description: 'License agreements and rental terms' },
-  { key: 'documents',  label: 'Documents',      description: 'Uploaded lease and compliance docs' },
-  { key: 'changeLogs', label: 'Change Log',     description: 'Audit trail of all edits' },
-  { key: 'media',      label: 'Site Media',     description: 'Photos and videos (storage files)' },
-]
+function buildTableLabels(ownerPlural: string, ownerSingular: string): { key: keyof Counts; label: string; description: string }[] {
+  return [
+    { key: 'sites',      label: 'Tower Sites',    description: 'Site records, coordinates, status' },
+    { key: 'owners',     label: `Site ${ownerPlural}`,  description: `Site ${ownerSingular.toLowerCase()} / landlord records` },
+    { key: 'tenants',    label: 'Licensees',      description: 'Carrier / licensee records' },
+    { key: 'tenancies',  label: 'Licenses',       description: 'License agreements and rental terms' },
+    { key: 'documents',  label: 'Documents',      description: 'Uploaded lease and compliance docs' },
+    { key: 'changeLogs', label: 'Change Log',     description: 'Audit trail of all edits' },
+    { key: 'media',      label: 'Site Media',     description: 'Photos and videos (storage files)' },
+  ]
+}
 
 export default function AdminClient({ counts, totalRows }: Props) {
   const router = useRouter()
+  const { ownerSingular, ownerPlural } = useOrgLabel()
+  const TABLE_LABELS = buildTableLabels(ownerPlural, ownerSingular)
   const [confirmText, setConfirmText] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

@@ -6,20 +6,23 @@ import { LayoutDashboard, MapPin, Map, FileText, Building2, Radio, Landmark, Set
 import { createBrowserClient } from '@supabase/ssr'
 import { useEffect, useState } from 'react'
 import MasterQuery from './MasterQuery'
+import { useOrgLabel } from '@/contexts/OrgLabelContext'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneusqgcwxwkix.supabase.co'
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZmbnRwZHBuZXVzcWdjd3h3a2l4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NTg2MzEsImV4cCI6MjA5MzUzNDYzMX0.kFZ6b2WKAl7GVsEQZeO33qcxhyBruQlTfW0eZfkcg1c'
 
-const nav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/sites', label: 'Site Portfolio', icon: MapPin },
-  { href: '/tenants', label: 'Licensees', icon: Building2 },
-  { href: '/owners', label: 'Host Agencies', icon: Landmark },
-  { href: '/map', label: 'Map View', icon: Map },
-  { href: '/reports', label: 'Reports', icon: FileText },
-  { href: '/reports/impact', label: 'Impact Simulator', icon: TrendingUp },
-  { href: '/field', label: 'Field Surveys', icon: ClipboardList },
-]
+function buildNav(ownerPlural: string) {
+  return [
+    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/sites', label: 'Site Portfolio', icon: MapPin },
+    { href: '/tenants', label: 'Licensees', icon: Building2 },
+    { href: '/owners', label: `Site ${ownerPlural}`, icon: Landmark },
+    { href: '/map', label: 'Map View', icon: Map },
+    { href: '/reports', label: 'Reports', icon: FileText },
+    { href: '/reports/impact', label: 'Impact Simulator', icon: TrendingUp },
+    { href: '/field', label: 'Field Surveys', icon: ClipboardList },
+  ]
+}
 
 const adminNav = [
   { href: '/admin', label: 'Data Management', icon: Settings },
@@ -32,6 +35,8 @@ const adminNav = [
 export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
   const pathname = usePathname()
   const router   = useRouter()
+  const { ownerPlural } = useOrgLabel()
+  const nav = buildNav(ownerPlural)
   const [userEmail, setUserEmail]   = useState<string | null>(null)
   const [userName, setUserName]     = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl]   = useState<string | null>(null)
@@ -76,9 +81,9 @@ export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ color: 'white', fontWeight: 700, fontSize: '13px', lineHeight: 1.2 }}>
-              SCETV Site Management
+              Columbia Wireless Site Asset Management
             </div>
-            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>by Columbia Wireless</div>
+            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>powered by VeriPura</div>
           </div>
           {onClose && (
             <button
@@ -199,13 +204,8 @@ export default function Sidebar({ onClose }: { onClose?: () => void } = {}) {
             </div>
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            {userName && (
-              <div style={{ fontSize: '12px', fontWeight: 600, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {userName}
-              </div>
-            )}
-            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.45)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {userEmail ?? '…'}
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'white', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {userName || userEmail || '…'}
             </div>
           </div>
         </div>

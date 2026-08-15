@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getCallerName } from '@/lib/logDocEvent'
+import { assertSiteVisible } from '@/lib/orgScope'
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneusqgcwxwkix.supabase.co'
@@ -12,6 +13,7 @@ function getSupabaseAdmin() {
 export async function GET(req: NextRequest) {
   const siteId = req.nextUrl.searchParams.get('site_id')
   if (!siteId) return NextResponse.json({ error: 'site_id required' }, { status: 400 })
+  if (!(await assertSiteVisible(siteId))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const supabase = getSupabaseAdmin()
   const { data, error } = await supabase
@@ -52,6 +54,7 @@ export async function POST(req: NextRequest) {
     if (!site_id || !user_id) {
       return NextResponse.json({ error: 'site_id and user_id required' }, { status: 400 })
     }
+    if (!(await assertSiteVisible(site_id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const payload: Record<string, any> = {
       site_id,

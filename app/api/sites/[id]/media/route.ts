@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase, getServiceClient } from '@/lib/supabase'
 import { getActorInfo, logChange } from '@/lib/audit'
+import { assertSiteVisible } from '@/lib/orgScope'
 
 // ── GET /api/sites/[id]/media ────────────────────────────────────────────────
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    if (!(await assertSiteVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const supabase = getSupabase()
     const { data, error } = await supabase
       .from('site_media')
@@ -27,6 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    if (!(await assertSiteVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const contentType = req.headers.get('content-type') ?? ''
 
     // ── JSON path: file already in storage, just save DB metadata ────────────

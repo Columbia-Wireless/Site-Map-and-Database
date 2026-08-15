@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { assertAgencyVisible } from '@/lib/orgScope'
 
 export async function GET(
   _req: NextRequest,
@@ -7,6 +8,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    if (!(await assertAgencyVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const supabase = getSupabase()
     const { data, error } = await supabase
       .from('site_change_log')

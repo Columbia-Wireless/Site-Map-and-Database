@@ -27,7 +27,11 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
-  const isPublicPath = pathname.startsWith('/login') || pathname.startsWith('/auth')
+  const isPublicPath =
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/forgot-password') ||
+    pathname.startsWith('/reset-password')
 
   // Resolve the public-facing base URL for redirects.
   //
@@ -61,12 +65,42 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/dashboard', baseUrl))
   }
 
+  // Authenticated but not provisioned → treat as not logged in.
+  //
+  // Google/Microsoft sign-in only requires a valid account with that
+  // provider — it does NOT require an admin to have invited the person.
+  // Supabase Auth will happily authenticate anyone with a Google account,
+  // regardless of whether they have a row in our own profiles table. Without
+  // this check, someone whose profile was deleted (access revoked) — or a
+  // total stranger who's never been invited — reaches the app shell with an
+  // empty, org-scoped-to-nothing dashboard instead of being turned away.
+  let profileRow: { role: string } | null = null
+  if (user && !isPublicPath) {
+    const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single()
+    profileRow = data
+    if (!profileRow) {
+      await supabase.auth.signOut()
+      return NextResponse.redirect(new URL('/login?error=not_provisioned', baseUrl))
+    }
+  }
+
   // MFA enforcement: if user has TOTP enrolled but hasn't completed AAL2 this session,
   // redirect to the MFA challenge page (except when already on /auth/mfa or /settings)
   if (user && !isPublicPath && pathname !== '/auth/mfa' && pathname !== '/settings') {
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
     if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
       return NextResponse.redirect(new URL('/auth/mfa', baseUrl))
+    }
+
+    // Mandatory MFA for admin accounts: if the user's role is admin/super_admin
+    // and they have no TOTP factor enrolled at all (nextLevel stays at aal1,
+    // same as currentLevel), force them to /settings to enroll before
+    // anything else in the app is reachable.
+    if (aal && aal.nextLevel === aal.currentLevel && aal.currentLevel !== 'aal2') {
+      const role = profileRow?.role
+      if (role === 'admin' || role === 'super_admin') {
+        return NextResponse.redirect(new URL('/settings?mfaRequired=1', baseUrl))
+      }
     }
   }
 

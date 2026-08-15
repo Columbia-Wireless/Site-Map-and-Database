@@ -1,6 +1,8 @@
 export const dynamic = 'force-dynamic'
 
 import { getSupabase } from '@/lib/supabase'
+import { getProfile } from '@/lib/profile'
+import { scopeFromProfile, getVisibleSiteIds } from '@/lib/orgScope'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Building2, User, MapPin, Pencil, Map } from 'lucide-react'
@@ -30,14 +32,28 @@ export default async function TenantDetailPage({
   const { id } = await params
   const { from } = await searchParams
   const supabase = getSupabase()
+  const profile = await getProfile()
+  const scope = scopeFromProfile(profile)
+  const ownerSingular = profile?.owner_label_singular ?? 'Owner'
 
-  const [{ data: tenant }, { data: tenancies }, { data: contactRows }] = await Promise.all([
+  const [{ data: tenant }, { data: rawTenancies }, { data: contactRows }] = await Promise.all([
     supabase.from('licensees').select('*').eq('id', id).single(),
     supabase.from('site_licenses')
       .select('*, tower_sites(id, site_code, name, state, address, city, tower_type, height_ft)')
       .eq('licensee_id', id),
     supabase.from('contacts').select('*').eq('entity_type', 'licensee').eq('entity_id', id).order('contact_type'),
   ])
+
+  // Licensees are a shared reference table — restrict this licensee's
+  // tenancies to sites visible to the caller's org.
+  const visibleSiteIds = await getVisibleSiteIds(scope)
+  const visibleSet = visibleSiteIds ? new Set(visibleSiteIds) : null
+  const tenancies = visibleSet
+    ? (rawTenancies ?? []).filter((t: any) => visibleSet.has(t.tower_sites?.id))
+    : (rawTenancies ?? [])
+  // Only deny access if this licensee had tenancies but none were in scope —
+  // a licensee with genuinely zero tenancies anywhere is a legitimate empty state.
+  if (visibleSet && (rawTenancies?.length ?? 0) > 0 && tenancies.length === 0) notFound()
 
   // Collect unique sites this carrier has licenses on
   const siteMap: Record<string, { id: string; site_code: string; name: string; city: string; state: string }> = {}
@@ -131,7 +147,7 @@ export default async function TenantDetailPage({
       {/* Contacts */}
       {(contactRows ?? []).length > 0 && (
         <div style={{ marginBottom: '28px' }}>
-          <ContactsPanel contacts={contactRows ?? []} />
+          <ContactsPanel contacts={contactRows ?? []} ownerLabel={ownerSingular} />
         </div>
       )}
 

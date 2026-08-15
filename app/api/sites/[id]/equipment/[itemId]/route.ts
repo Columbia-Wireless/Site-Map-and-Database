@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { assertSiteVisible } from '@/lib/orgScope'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; itemId: string }> }) {
   try {
-    const { itemId } = await params
+    const { id, itemId } = await params
+    if (!(await assertSiteVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const body = await req.json()
     const supabase = getSupabase()
     const updates: Record<string, unknown> = {}
@@ -26,7 +28,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string; itemId: string }> }) {
   try {
-    const { itemId } = await params
+    const { id, itemId } = await params
+    if (!(await assertSiteVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const supabase = getSupabase()
     const { error } = await supabase.from('equipment_items').delete().eq('id', itemId)
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })

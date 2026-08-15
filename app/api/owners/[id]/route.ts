@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getActorInfo, logChange } from '@/lib/audit'
+import { assertAgencyVisible } from '@/lib/orgScope'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    if (!(await assertAgencyVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const body = await req.json()
     const supabase = getSupabase()
 
@@ -35,6 +37,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    if (!(await assertAgencyVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const supabase = getSupabase()
 
     const { count } = await supabase

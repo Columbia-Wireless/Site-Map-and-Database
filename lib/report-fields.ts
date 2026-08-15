@@ -64,7 +64,7 @@ export const FIELD_CATALOG: Record<DataSource, { label: string; fields: FieldDef
     ],
   },
   agencies: {
-    label: 'Host Agencies',
+    label: 'Site Owners',
     fields: [
       { key: 'name',         label: 'Name',          type: 'text' },
       { key: 'city',         label: 'City',          type: 'text' },

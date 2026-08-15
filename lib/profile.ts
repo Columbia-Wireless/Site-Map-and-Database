@@ -12,7 +12,10 @@ export interface UserProfile {
   full_name: string | null
   organization_id: string | null
   org_name: string | null
+  is_platform_admin: boolean
   can_export: boolean
+  owner_label_singular: string
+  owner_label_plural: string
 }
 
 /** Get the profile of the currently logged-in user (server component / route handler). */
@@ -34,7 +37,7 @@ export async function getProfile(): Promise<UserProfile | null> {
 
   const { data } = await supabase
     .from('profiles')
-    .select('id, role, full_name, organization_id, can_export, organizations(name)')
+    .select('id, role, full_name, organization_id, can_export, organizations(name, is_platform_admin, owner_label_singular, owner_label_plural)')
     .eq('id', user.id)
     .single()
 
@@ -46,7 +49,10 @@ export async function getProfile(): Promise<UserProfile | null> {
     full_name: data.full_name,
     organization_id: data.organization_id,
     org_name: (data.organizations as any)?.name ?? null,
+    is_platform_admin: !!(data.organizations as any)?.is_platform_admin,
     can_export: (data as any).can_export ?? false,
+    owner_label_singular: (data.organizations as any)?.owner_label_singular ?? 'Owner',
+    owner_label_plural: (data.organizations as any)?.owner_label_plural ?? 'Owners',
   }
 }
 

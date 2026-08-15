@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { assertSiteVisible } from '@/lib/orgScope'
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneusqgcwxwkix.supabase.co'
@@ -13,6 +14,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string; docId: string }> }
 ) {
   const { id: siteId, docId } = await params
+  if (!(await assertSiteVisible(siteId))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const supabase = getSupabaseAdmin()
 
   const { data: doc, error } = await supabase
@@ -39,6 +41,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; docId: string }> }
 ) {
   const { id: siteId, docId } = await params
+  if (!(await assertSiteVisible(siteId))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const supabase = getSupabaseAdmin()
 
   // Fetch storage path before deleting the record
