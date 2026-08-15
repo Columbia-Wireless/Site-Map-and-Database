@@ -1,7 +1,18 @@
 import { NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
+import { getProfile, isSuperAdmin } from '@/lib/profile'
 
+// Wipes every site, owner, licensee, license, document, and media file in the
+// database. This was originally a demo-reset convenience with no permission
+// check at all — anyone who knew the URL could call it, logged in or not.
+// Restricted to super_admin (VeriPura platform admins) since no client-side
+// role should ever be able to trigger a full data wipe.
 export async function POST() {
+  const profile = await getProfile()
+  if (!isSuperAdmin(profile)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+
   try {
     const supabase = getServiceClient()
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServiceClient } from '@/lib/supabase'
+import { assertSiteVisible } from '@/lib/orgScope'
 
 const BUCKET = 'site-media'
 
@@ -12,6 +13,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    if (!(await assertSiteVisible(id))) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
     const url = new URL(req.url)
     const filename = url.searchParams.get('filename')
 
