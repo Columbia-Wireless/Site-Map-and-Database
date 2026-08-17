@@ -66,6 +66,10 @@ The actual tenancy/lease-term table (`SiteTenancy` in `lib/types.ts`).
 | `license_start`, `license_end` | Cached snapshot only — see note above. |
 | `schedule_cache` | jsonb. `{ rows, oneTimeCharges, issues }` from `generateRentSchedule()`. |
 | `schedule_computed_at` | timestamptz. When `schedule_cache` was last computed. |
+
+**CPI escalation (as of 2026-08-17):** the engine now resolves CPI-indexed leases via `lib/rentEngine/services/cpiService.ts` — manual `cpiRateOverride` on the clause, then the contract's own extracted rate, then a BLS CPI-U historical lookup by year (flat 3% default outside the table's covered range). Earlier in this project the ported engine refused to schedule CPI leases at all (`CPI_INDEX_UNAVAILABLE`); that was a stale clone of `SAM2.0_ingest`, not the confirmed design — the three-tier fallback above is current and pulled fresh from origin.
+
+**Billing (`/billing`, nav item)** is the portfolio-wide gap-flagging queue: every active/pending/expiring `site_licenses` row, bucketed by whether its cached `schedule_cache.issues` has an error, was never computed, or is clean. It reads the cache only (no recomputation), and links out to the relevant Site's Rent Schedule tab (`/sites/[id]?tab=rent-schedule`) to actually view or fix one schedule. Distinct from the per-entity Rent Schedule tabs on Site/Licensee/Owner pages, which are for viewing one agreement, not finding which ones need attention.
 | `status` | `active \| pending \| expiring_soon \| expired \| terminated` |
 | `notes` | |
 | `document_id` | FK → `site_documents.id`, nullable, links the backing lease PDF |

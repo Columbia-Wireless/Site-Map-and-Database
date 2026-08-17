@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Building2, Clock, PlusCircle, MinusCircle, Edit3, AlertCircle, RefreshCw } from 'lucide-react'
 import SiteDetailTenancies from './SiteDetailTenancies'
@@ -56,7 +57,10 @@ export default function SiteDetailTabs({
   site, changes: initialChanges, docs, tenants, allLicenses, userCanEdit, slots, occupiedCount, occupiedNames,
 }: Props) {
   const { ownerSingular } = useOrgLabel()
-  const [activeTab, setActiveTab] = useState('overview')
+  const searchParams = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const initialTab = TABS.some(t => t.id === requestedTab) ? (requestedTab as string) : 'overview'
+  const [activeTab, setActiveTab] = useState(initialTab)
   const [uploadingMedia, setUploadingMedia] = useState(false)
   const [auditEntries, setAuditEntries] = useState<any[]>(initialChanges)
   const [auditLoading, setAuditLoading] = useState(false)

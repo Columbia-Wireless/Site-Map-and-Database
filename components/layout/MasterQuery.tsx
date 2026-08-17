@@ -2,17 +2,18 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, MapPin, Building2, Landmark, Users, X, ArrowRight } from 'lucide-react'
+import { Search, MapPin, Building2, Landmark, Users, X, ArrowRight, DollarSign } from 'lucide-react'
 import { useOrgLabel } from '@/contexts/OrgLabelContext'
 
 interface SearchResults {
   sites:     { id: string; site_code: string; name: string; city: string; state: string; tower_type: string; status: string }[]
   licensees: { id: string; name: string; hq_city: string; hq_state: string; status: string }[]
   agencies:  { id: string; name: string; city: string; state: string; type: string; status: string }[]
+  billing:   { id: string; site_id: string; licensee_id: string; status: string; tower_sites: { id: string; site_code: string; name: string } | null; licensees: { id: string; name: string } | null }[]
   users:     { id: string; full_name: string | null; email: string; role: string | null }[]
 }
 
-const EMPTY: SearchResults = { sites: [], licensees: [], agencies: [], users: [] }
+const EMPTY: SearchResults = { sites: [], licensees: [], agencies: [], billing: [], users: [] }
 
 const TYPE_LABELS: Record<string, string> = {
   monopole: 'Monopole', lattice: 'Lattice', rooftop: 'Rooftop',
@@ -75,6 +76,13 @@ export default function MasterQuery() {
     ...results.sites.map(r => ({ type: 'site', href: `/sites/${r.id}`, label: r.site_code, sub: `${r.name} · ${r.city}, ${r.state}`, tag: TYPE_LABELS[r.tower_type] ?? r.tower_type })),
     ...results.licensees.map(r => ({ type: 'licensee', href: `/tenants/${r.id}`, label: r.name, sub: r.hq_city && r.hq_state ? `${r.hq_city}, ${r.hq_state}` : 'Licensee', tag: r.status })),
     ...results.agencies.map(r => ({ type: 'agency', href: `/owners/${r.id}`, label: r.name, sub: r.city && r.state ? `${r.city}, ${r.state}` : `Site ${ownerSingular}`, tag: r.type })),
+    ...results.billing.map(r => ({
+      type: 'billing',
+      href: r.tower_sites ? `/sites/${r.tower_sites.id}?tab=rent-schedule` : '/billing',
+      label: r.licensees?.name ?? 'Unknown licensee',
+      sub: r.tower_sites ? `${r.tower_sites.site_code} · ${r.tower_sites.name}` : 'Rent schedule',
+      tag: r.status,
+    })),
     ...results.users.map(r => ({ type: 'user', href: `/admin/users`, label: r.full_name || r.email, sub: r.email, tag: r.role ?? '' })),
   ]
 
@@ -101,6 +109,7 @@ export default function MasterQuery() {
     if (type === 'site')     return <MapPin size={14} color="#2563eb" />
     if (type === 'licensee') return <Building2 size={14} color="#7e22ce" />
     if (type === 'agency')   return <Landmark size={14} color="#15803d" />
+    if (type === 'billing')  return <DollarSign size={14} color="#0891b2" />
     return <Users size={14} color="#b45309" />
   }
 
@@ -108,6 +117,7 @@ export default function MasterQuery() {
     if (type === 'site')     return 'Sites'
     if (type === 'licensee') return 'Licensees'
     if (type === 'agency')   return `Site ${ownerPlural}`
+    if (type === 'billing')  return 'Billing'
     return 'Users'
   }
 
@@ -149,7 +159,7 @@ export default function MasterQuery() {
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search sites, licensees, agencies, users…"
+            placeholder="Search sites, licensees, agencies, billing, users…"
             style={{ flex: 1, border: 'none', outline: 'none', fontSize: '16px', color: '#0f172a', background: 'transparent' }}
           />
           {loading && (

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, MapPin, Map, FileText, Building2, Radio, Landmark, Settings, LogOut, Users, ClipboardList, X, ShieldCheck, TrendingUp, Search, PenSquare } from 'lucide-react'
+import { LayoutDashboard, MapPin, Map, FileText, Building2, Radio, Landmark, Settings, LogOut, Users, ClipboardList, X, ShieldCheck, TrendingUp, Search, PenSquare, DollarSign } from 'lucide-react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useEffect, useState } from 'react'
 import MasterQuery from './MasterQuery'
@@ -17,6 +17,7 @@ function buildNav(ownerPlural: string) {
     { href: '/sites', label: 'Site Portfolio', icon: MapPin },
     { href: '/tenants', label: 'Licensees', icon: Building2 },
     { href: '/owners', label: `Site ${ownerPlural}`, icon: Landmark },
+    { href: '/billing', label: 'Billing', icon: DollarSign },
     { href: '/map', label: 'Map View', icon: Map },
     { href: '/reports', label: 'Reports', icon: FileText },
     { href: '/reports/impact', label: 'Impact Simulator', icon: TrendingUp },

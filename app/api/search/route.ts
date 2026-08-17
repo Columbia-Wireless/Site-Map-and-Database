@@ -13,7 +13,7 @@ const ROLE_RANK: Record<string, number> = {
 
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')?.trim()
-  if (!q || q.length < 2) return NextResponse.json({ sites: [], licensees: [], agencies: [], users: [] })
+  if (!q || q.length < 2) return NextResponse.json({ sites: [], licensees: [], agencies: [], billing: [], users: [] })
 
   const cookieStore = await cookies()
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -61,6 +61,27 @@ export async function GET(request: NextRequest) {
       : Promise.resolve({ data: [] }),
   ])
 
+  // Billing: rather than a fragile ilike across a joined table (PostgREST's
+  // .or() can't reach embedded-resource columns), piggyback on the sites/
+  // licensees already matched above — a query for "AT&T" that matches the
+  // licensee also surfaces AT&T's current agreements here. RLS on
+  // site_licenses scopes this the same way as the other queries.
+  const matchedSiteIds = (sitesRes.data ?? []).map((s: any) => s.id)
+  const matchedLicenseeIds = (licenseesRes.data ?? []).map((l: any) => l.id)
+  let billing: any[] = []
+  if (matchedSiteIds.length > 0 || matchedLicenseeIds.length > 0) {
+    const orParts: string[] = []
+    if (matchedSiteIds.length > 0) orParts.push(`site_id.in.(${matchedSiteIds.join(',')})`)
+    if (matchedLicenseeIds.length > 0) orParts.push(`licensee_id.in.(${matchedLicenseeIds.join(',')})`)
+    const { data: billingData } = await supabase
+      .from('site_licenses')
+      .select('id, site_id, licensee_id, status, tower_sites ( id, site_code, name ), licensees ( id, name )')
+      .in('status', ['active', 'pending', 'expiring_soon'])
+      .or(orParts.join(','))
+      .limit(LIMIT)
+    billing = billingData ?? []
+  }
+
   // For users, enrich with emails from auth.admin if admin
   let users: any[] = usersRes.data ?? []
   if (isAdmin && users.length > 0) {
@@ -92,6 +113,7 @@ export async function GET(request: NextRequest) {
     sites:     sitesRes.data     ?? [],
     licensees: licenseesRes.data ?? [],
     agencies:  agenciesRes.data  ?? [],
+    billing,
     users:     isAdmin ? users : [],
   })
 }
