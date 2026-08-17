@@ -10,6 +10,7 @@ import TenantDeleteButton from '@/components/tenants/TenantDeleteButton'
 import ContactsPanel from '@/components/contacts/ContactsPanel'
 import LicenseeDocsPanel from '@/components/tenants/LicenseeDocsPanel'
 import AuditDrawer from '@/components/shared/AuditDrawer'
+import RentScheduleForLicense from '@/components/rentEngine/RentScheduleForLicense'
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -215,6 +216,28 @@ export default async function TenantDetailPage({
           </div>
         )}
       </div>
+
+      {/* Rent Schedule — one per active license, rolled up across every site this carrier is billed on */}
+      {activeTenancies.length > 0 && (
+        <div style={{ marginTop: '32px' }}>
+          <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', marginBottom: '16px' }}>
+            Rent Schedule
+          </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {activeTenancies.map(t => {
+              const site = (t.tower_sites as any)
+              return (
+                <div key={t.id}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                    {site?.site_code ?? 'Unknown site'}
+                  </div>
+                  <RentScheduleForLicense licenseId={t.id} siteId={site?.id ?? ''} showSite />
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

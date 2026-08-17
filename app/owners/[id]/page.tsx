@@ -12,6 +12,7 @@ import { scopeFromProfile, scopeSitesQuery } from '@/lib/orgScope'
 import OwnerDeleteButton from '@/components/owners/OwnerDeleteButton'
 import ContactsPanel from '@/components/contacts/ContactsPanel'
 import AuditDrawer from '@/components/shared/AuditDrawer'
+import RentScheduleForLicense from '@/components/rentEngine/RentScheduleForLicense'
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -94,6 +95,19 @@ export default async function OwnerDetailPage({ params }: { params: Promise<{ id
   })
 
   const vacantCount = allSites.length - occupiedCount
+
+  // Flatten every active license across every site this owner owns, for the
+  // Rent Schedule section below — one RentScheduleForLicense per license.
+  const activeLicensesAcrossSites = allSites.flatMap((site: any) =>
+    (site.site_licenses ?? [])
+      .filter((l: any) => ['active', 'pending', 'expiring_soon'].includes(l.status))
+      .map((l: any) => ({
+        licenseId: l.id,
+        siteId: site.id,
+        siteCode: site.site_code,
+        tenantName: l.licensees?.name ?? 'Unknown tenant',
+      }))
+  )
 
   return (
     <div style={{ padding: '32px', maxWidth: '1300px' }}>
@@ -272,6 +286,25 @@ export default async function OwnerDetailPage({ params }: { params: Promise<{ id
           </div>
         )}
       </div>
+
+      {/* Rent Schedule — every active license across every site this owner owns */}
+      {activeLicensesAcrossSites.length > 0 && (
+        <div style={{ marginTop: '32px' }}>
+          <h2 style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a', marginBottom: '16px' }}>
+            Rent Schedule
+          </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {activeLicensesAcrossSites.map((l: { licenseId: string; siteId: string; siteCode: string; tenantName: string }) => (
+              <div key={l.licenseId}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                  {l.siteCode} · {l.tenantName}
+                </div>
+                <RentScheduleForLicense licenseId={l.licenseId} siteId={l.siteId} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

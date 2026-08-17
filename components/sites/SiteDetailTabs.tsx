@@ -9,6 +9,7 @@ import SiteDocsAndTerms from './SiteDocsAndTerms'
 import SiteRevenueHistory from './SiteRevenueHistory'
 import EquipmentPanel from './EquipmentPanel'
 import SiteComparables from './SiteComparables'
+import RentScheduleForLicense from '../rentEngine/RentScheduleForLicense'
 import { useOrgLabel } from '@/contexts/OrgLabelContext'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -30,6 +31,7 @@ interface Props {
 const TABS = [
   { id: 'overview',      label: 'Overview',      icon: '📋' },
   { id: 'licenses',      label: 'Licenses',      icon: '📄' },
+  { id: 'rent-schedule', label: 'Rent Schedule', icon: '💰' },
   { id: 'equipment',     label: 'Equipment',     icon: '📡' },
   { id: 'comparables',   label: 'Comparables',   icon: '📊' },
   { id: 'documents',     label: 'Documents',     icon: '🗂️' },
@@ -236,6 +238,26 @@ export default function SiteDetailTabs({
       {/* LICENSES */}
       <div style={{ display: activeTab === 'licenses' ? 'block' : 'none' }}>
         <SiteDetailTenancies siteId={site.id} tenants={tenants} tenantSlots={slots} />
+      </div>
+
+      {/* RENT SCHEDULE */}
+      <div style={{ display: activeTab === 'rent-schedule' ? 'flex' : 'none', flexDirection: 'column', gap: '20px' }}>
+        {allLicenses.filter((l: any) => ['active', 'pending', 'expiring_soon'].includes(l.status)).length === 0 ? (
+          <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+            No active licenses at this site to calculate a rent schedule for.
+          </div>
+        ) : (
+          allLicenses
+            .filter((l: any) => ['active', 'pending', 'expiring_soon'].includes(l.status))
+            .map((l: any) => (
+              <div key={l.id}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '10px' }}>
+                  {l.licensees?.name ?? 'Unknown tenant'}
+                </div>
+                <RentScheduleForLicense licenseId={l.id} siteId={site.id} />
+              </div>
+            ))
+        )}
       </div>
 
       {/* EQUIPMENT */}

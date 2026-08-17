@@ -53,15 +53,19 @@ Core site table.
 No more `tenant_name`/`owner_name`/`lease_start`/`annual_rent` on this table, those live on `site_licenses` now.
 
 ### `site_licenses`
-The actual tenancy/lease-term table (`SiteTenancy` in `lib/types.ts`). **This is what feeds the rent calculator.**
+The actual tenancy/lease-term table (`SiteTenancy` in `lib/types.ts`).
+
+**As of the rent engine migration (see `supabase/rent_engine_schema.sql`), `annual_rent`, `escalation_rate`, `escalation_detail`, `license_start`, and `license_end` are a CACHED SNAPSHOT of the latest synced document's terms — fine for quick display/reports, but no longer the calculation input.** The real rent calculator (`lib/rentEngine/`) reads the full document chain instead, via `site_documents.license_id`. `schedule_cache`/`schedule_computed_at` hold the engine's actual last-computed output.
 
 | Column | Notes |
 |---|---|
 | `id`, `site_id` (FK → `tower_sites`), `licensee_id` (FK → `licensees`) | |
 | `contract_type`, `invoice_method`, `mount_type`, `antenna_height_ft` | |
-| `annual_rent` | numeric. **Read directly by the rent calculator, see below.** |
-| `escalation_rate` | numeric, percent. **Read directly by the rent calculator.** |
-| `license_start`, `license_end` | |
+| `annual_rent` | numeric. Cached snapshot only — see note above. |
+| `escalation_rate` | numeric, percent. Cached snapshot only — see note above. |
+| `license_start`, `license_end` | Cached snapshot only — see note above. |
+| `schedule_cache` | jsonb. `{ rows, oneTimeCharges, issues }` from `generateRentSchedule()`. |
+| `schedule_computed_at` | timestamptz. When `schedule_cache` was last computed. |
 | `status` | `active \| pending \| expiring_soon \| expired \| terminated` |
 | `notes` | |
 | `document_id` | FK → `site_documents.id`, nullable, links the backing lease PDF |
@@ -71,7 +75,7 @@ The actual tenancy/lease-term table (`SiteTenancy` in `lib/types.ts`). **This is
 | `one_time_fees` | jsonb array |
 | `created_at` / `updated_at` | |
 
-**Rent calculator, confirmed in code**: `components/reports/ReportsClient.tsx` computes projected/current rent client-side, at report-run time, as:
+**Legacy rent calculator (being replaced, see `lib/rentEngine/`)**: `components/reports/ReportsClient.tsx` computes projected/current rent client-side, at report-run time, as:
 
 ```
 annual_rent * (1 + escalation_rate / 100) ^ years_elapsed
@@ -112,7 +116,8 @@ Owners/host agencies (UI label "Owner", client-configurable). Same shared/derive
 | `file_size_kb` | |
 | `storage_path` | Supabase Storage key, bucket `lease-documents` |
 | `file_hash` | SHA-256, used for notarization |
-| `parent_document_id` | self-FK, amendment chains |
+| `parent_document_id` | self-FK, amendment chains (legacy upload path) |
+| `license_id` | FK → `site_licenses.id`, added by `rent_engine_schema.sql`. Links a document to the agreement it belongs to, so the rent engine can pull every document for one lease chain as a single `DocumentRecord[]`. Populated by `app/api/sam2/sync/route.ts` on sync; nullable for documents not tied to a specific lease (photos, plots, etc.). |
 | `doc_status` | `uploaded \| extracting \| review_required \| extracted \| approved \| notarized` |
 | `extracted_terms` | jsonb, `{field: {value, confidence, note?}}` shape. Also holds `_address_check` and `_sam2_raw` meta keys. |
 | `iota_block_id`, `iota_explorer_url` | blockchain notarization receipt |

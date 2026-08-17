@@ -251,6 +251,16 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // Link this document back to its agreement, now that the license row is
+    // resolved. This is what lets the rent engine pull the full document
+    // chain (base agreement through every amendment) for one lease — see
+    // supabase/rent_engine_schema.sql.
+    const { error: linkError } = await supabase
+      .from('site_documents')
+      .update({ license_id: licenseId })
+      .eq('id', documentId)
+    if (linkError) warnings.push(`Document synced but could not be linked to its agreement: ${linkError.message}`)
+
     const result: Sam2SyncResult = {
       siteId,
       licenseId,
