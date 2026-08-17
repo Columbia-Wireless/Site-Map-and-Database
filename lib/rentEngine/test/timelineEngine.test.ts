@@ -322,12 +322,29 @@ describe('Timeline Engine Tests', () => {
     });
 
 
-    it('refuses to schedule a CPI lease rather than treating it as a fixed percentage', () => {
+    it('calculates CPI escalation using the CPI index lookup service', () => {
       const { rows, issues } = generateRentSchedule(site, agreement,
-        [lease({ escalation: { type: 'cpi', value: 0.03, frequencyMonths: 12,
+        [lease({ escalation: { type: 'cpi', value: 0, frequencyMonths: 12,
           appliesToInitialTerm: true, appliesToRenewalTerms: true } })], undefined, new Date(2026, 6, 30));
-      expect(rows).toHaveLength(0);
-      expect(issues.map((i) => i.code)).toContain('CPI_INDEX_UNAVAILABLE');
+      expect(rows.length).toBeGreaterThan(0);
+      expect(issues.map((i) => i.code)).toContain('CPI_ESCALATION_APPLIED');
+      // Commencement 2018-11-01: row 0 is Nov 2018, row 12 (the first escalation step) is
+      // Nov 2019 — the CPI rate applies for the year the step actually takes effect, not the
+      // lease's commencement year (client-confirmed 2026-08-09). BLS CPI-U lookup rate for
+      // 2019 is 2.3%: 500 * (1 + 0.023) = 511.50.
+      expect(rows[0].totalMonthlyRent).toBe(500);
+      expect(rows[12].totalMonthlyRent).toBe(511.5);
+    });
+
+    it('calculates CPI escalation using a manual CPI rate override when provided', () => {
+      const { rows, issues } = generateRentSchedule(site, agreement,
+        [lease({ escalation: { type: 'cpi', value: 0, cpiRateOverride: 0.04, frequencyMonths: 12,
+          appliesToInitialTerm: true, appliesToRenewalTerms: true } })], undefined, new Date(2026, 6, 30));
+      expect(rows.length).toBeGreaterThan(0);
+      expect(issues.map((i) => i.code)).toContain('CPI_ESCALATION_APPLIED');
+      // 4% override: Year 1 = 500, Year 2 = 520
+      expect(rows[0].totalMonthlyRent).toBe(500);
+      expect(rows[12].totalMonthlyRent).toBe(520);
     });
 
     it('prorates a partial first month on actual days, matching the production ledgers', () => {

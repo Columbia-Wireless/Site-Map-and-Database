@@ -14,6 +14,7 @@ import {
   computeEpochs,
   resolveTermsAt,
 } from './leaseChain';
+import { resolveCpiRate } from './cpiService';
 
 /** Months covered by one payment under each frequency. */
 const MONTHS_PER_PAYMENT: Record<PaymentFrequency, number> = {
@@ -41,6 +42,7 @@ export interface ScheduleIssue {
     | 'ONE_TIME_FEE_DUE_DATE_UNKNOWN'
     | 'HOLDOVER_NOT_PROJECTED'
     | 'CPI_INDEX_UNAVAILABLE'
+    | 'CPI_ESCALATION_APPLIED'
     | 'PARTIAL_PERIOD_PRORATED'
     | 'ESCALATION_DATE_DERIVED'
     | 'ESCALATION_ANCHOR_UNCHANGED_BY_AMENDMENT'
@@ -167,25 +169,31 @@ export function escalationAfterSteps(
   baseRent: number,
   steps: number,
   escalation: EscalationClause,
-  isRenewalPeriod: boolean
+  isRenewalPeriod: boolean,
+  year?: number
 ): number {
-  if (escalation.type === 'none' || escalation.value <= 0) return 0;
+  if (escalation.type === 'none') return 0;
   if (!isRenewalPeriod && !escalation.appliesToInitialTerm) return 0;
   if (isRenewalPeriod && !escalation.appliesToRenewalTerms) return 0;
   if (steps <= 0) return 0;
 
   if (escalation.type === 'cpi') {
-    throw new Error(
-      'CPI escalation cannot be calculated without published index values. ' +
-        'generateRentSchedule reports CPI_INDEX_UNAVAILABLE instead of estimating.'
-    );
+    const cpiRes = resolveCpiRate(escalation, year);
+    if (!cpiRes) {
+      throw new Error(
+        'CPI escalation cannot be calculated without published index values or a rate override.'
+      );
+    }
+    return roundCents(baseRent * Math.pow(1 + cpiRes.rate, steps) - baseRent);
   }
   if (escalation.type === 'fixed_percentage') {
+    if (escalation.value <= 0) return 0;
     // Compounds on the UNROUNDED base, matching the reference lease system: rounding at
     // each step yields 579.63 at year five where the correct figure is 579.64.
     return roundCents(baseRent * Math.pow(1 + escalation.value, steps) - baseRent);
   }
   if (escalation.type === 'fixed_amount') {
+    if (escalation.value <= 0) return 0;
     return roundCents(escalation.value * steps);
   }
   return 0;
@@ -278,7 +286,17 @@ export function generateRentSchedule(
   const startIndex = monthIndexOf(startDate);
 
   // --- Escalation frequency: required whenever escalation actually applies -------------
-  const escalates = terms.escalation.type !== 'none' && terms.escalation.value > 0;
+  // CPI is a separate question from `value > 0`: its rate can come from a manual override
+  // or the index lookup service instead of the contract's own extracted value, which is
+  // routinely 0 or absent for a CPI clause (resolveCpiRate handles that precedence — see
+  // cpiService.ts). Gating on `value > 0` for every type meant a CPI lease with an override
+  // but no extracted value never escalated at all: the CPI_ESCALATION_APPLIED issue below
+  // still fired (it checks `resolveCpiRate` directly), but every row after month 0 quietly
+  // priced as if nothing had changed.
+  const escalates =
+    terms.escalation.type === 'cpi'
+      ? resolveCpiRate(terms.escalation, startYear) !== null
+      : terms.escalation.type !== 'none' && terms.escalation.value > 0;
   if (escalates && !(terms.escalation.frequencyMonths > 0)) {
     issues.push({
       code: 'MISSING_ESCALATION_FREQUENCY',
@@ -289,16 +307,23 @@ export function generateRentSchedule(
     });
   }
 
-  // --- CPI: not derivable from the contract --------------------------------------------
+  // --- CPI: index lookup or manual rate override -------------------------------------
   if (terms.escalation.type === 'cpi') {
-    issues.push({
-      code: 'CPI_INDEX_UNAVAILABLE',
-      severity: 'error',
-      message:
-        'This lease escalates against a published price index. The index values are not ' +
-        'held by this system, so the rent cannot be calculated. Treating CPI as a fixed ' +
-        'percentage would produce a confident, wrong figure.',
-    });
+    const cpiRes = resolveCpiRate(terms.escalation, startYear);
+    if (cpiRes) {
+      issues.push({
+        code: 'CPI_ESCALATION_APPLIED',
+        severity: 'info',
+        message: `${cpiRes.description} applied for CPI escalation.`,
+      });
+    } else {
+      issues.push({
+        code: 'CPI_INDEX_UNAVAILABLE',
+        severity: 'error',
+        message:
+          'This lease escalates against a published price index. Supply a manual CPI rate override or index values before a schedule can be produced.',
+      });
+    }
   }
 
   // --- Partial first period: prorated on actual days -------------------------------------
@@ -534,13 +559,13 @@ export function generateRentSchedule(
       // the new rate from the escalation day inclusive, prorated on actual days —
       // the convention evidenced by the reference projections.
       const escDay = firstEscalation.getDate();
-      const before = escalationAfterSteps(current.monthlyRent, stepsAtStart, current.escalation, isRenewal);
-      const after = escalationAfterSteps(current.monthlyRent, stepsAtEnd, current.escalation, isRenewal);
+      const before = escalationAfterSteps(current.monthlyRent, stepsAtStart, current.escalation, isRenewal, yyyy);
+      const after = escalationAfterSteps(current.monthlyRent, stepsAtEnd, current.escalation, isRenewal, yyyy);
       const daysAtOld = Math.max(0, Math.min(monthLength, escDay - 1));
       const daysAtNew = monthLength - daysAtOld;
       escalationAmt = roundCents((before * daysAtOld + after * daysAtNew) / monthLength);
     } else {
-      escalationAmt = escalationAfterSteps(current.monthlyRent, stepsAtStart, current.escalation, isRenewal);
+      escalationAmt = escalationAfterSteps(current.monthlyRent, stepsAtStart, current.escalation, isRenewal, yyyy);
     }
 
     // A commencement mid-month prorates only the first row, on the same actual-days basis

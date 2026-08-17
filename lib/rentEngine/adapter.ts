@@ -75,16 +75,17 @@ type DbDocument = {
   extracted_terms: Record<string, unknown> | null
 }
 
+// As of the 2026-08-17 SAM2.0_ingest pull, the engine's InstallationType was
+// widened to the same 6 structure values Sam2TowerType already uses — this
+// is now a straight identity mapping, not the coarse 4-bucket fold the
+// previous engine snapshot required.
 const SAM2_TOWER_TO_INSTALLATION: Record<Sam2TowerType, InstallationType> = {
+  monopole: 'monopole',
+  lattice: 'lattice',
   rooftop: 'rooftop',
-  monopole: 'tower',
-  lattice: 'tower',
-  water_tower: 'tower',
-  guyed: 'tower',
-  // Not currently read by any ported calculation function (confirmed by
-  // grep against services/) — this mapping is unused today, kept only to
-  // satisfy the required field.
-  small_cell: 'other',
+  water_tower: 'water_tower',
+  guyed: 'guyed',
+  small_cell: 'small_cell',
 }
 
 const OUR_DOC_TYPE_TO_ENGINE: Record<string, DocType> = {
@@ -133,6 +134,9 @@ function toExtractedLeaseDoc(payload: Sam2SyncPayload): ExtractedLeaseDoc {
       installationType: payload.siteIdentity.installationType
         ? SAM2_TOWER_TO_INSTALLATION[payload.siteIdentity.installationType]
         : 'other',
+      // Real fact from the SAM 2.0 payload, not previously mapped because
+      // the engine's SiteIdentity had no field for it before this pull.
+      heightFt: payload.siteIdentity.heightFt ?? undefined,
     },
     oneTimeFees: (payload.oneTimeFees ?? []).map(f => ({
       description: f.description,

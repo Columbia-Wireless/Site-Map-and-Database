@@ -7,10 +7,16 @@ export type DocType =
   | 'commencement_agreement'
   | 'management_agreement';
 
-export type InstallationType = 
-  | 'rooftop' 
-  | 'tower' 
-  | 'in-building_fiber' 
+export type InstallationType =
+  | 'monopole'
+  | 'lattice'
+  | 'rooftop'
+  | 'water_tower'
+  | 'guyed'
+  | 'small_cell'
+  /** Distributed antenna system inside a building — not a tower structure. */
+  | 'in-building_fiber'
+  /** Genuinely unknown or none of the above — the fallback when nothing was extracted. */
   | 'other';
 
 export type PaymentFrequency = 'monthly' | 'quarterly' | 'annually';
@@ -41,6 +47,7 @@ export interface SiteIdentity {
   lessorName: string;
   lesseeName: string;
   installationType: InstallationType;
+  heightFt?: number;
 }
 
 export interface OneTimeFee {
@@ -72,6 +79,10 @@ export interface EscalationClause {
    * derives commencement + frequencyMonths and reports which basis it used.
    */
   firstEscalationDate?: string;
+  /** Manual CPI rate override (e.g. 0.032 for 3.2%), set via HITL review drawer. */
+  cpiRateOverride?: number;
+  /** CPI series identifier, e.g. 'CPI-U' (US City Average All Urban Consumers). */
+  cpiSeries?: string;
 }
 
 export interface LeaseTerms {
@@ -348,7 +359,15 @@ export type InconsistencyCode =
    * under different names/addresses and got consolidated. The physical-property judgment
    * behind the merge should still get the client's own confirmation.
    */
-  | 'SITE_MERGED_PENDING_CLIENT_REVIEW';
+  | 'SITE_MERGED_PENDING_CLIENT_REVIEW'
+  /**
+   * Filed under a placeholder "Unknown Tenant" agreement because the document itself never
+   * names a licensee/lessee — e.g. an unexecuted template with blank party names and illegible
+   * signatures. Not an extraction failure: the source document genuinely does not say. A human
+   * must identify the real tenant (e.g. from Columbia's own records) before this can be folded
+   * into the correct agreement.
+   */
+  | 'TENANT_NAME_UNRESOLVED';
 
 export type FlagSeverity = 'critical' | 'warning' | 'info';
 export type FlagStatus = 'active' | 'resolved' | 'acknowledged';
@@ -365,6 +384,9 @@ export interface GeocodeLocation {
   latitude: number;
   longitude: number;
   formattedAddress?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
 }
 
 export interface Site {
