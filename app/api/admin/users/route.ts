@@ -91,10 +91,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
-    const { email, role, organization_id } = await request.json()
+    const { email, role, organization_id, full_name } = await request.json()
     if (!email || !role) {
       return NextResponse.json({ error: 'email and role are required' }, { status: 400 })
     }
+    const trimmedName = typeof full_name === 'string' ? full_name.trim().slice(0, 200) : ''
 
     // Only super_admin can assign super_admin
     if (role === 'super_admin' && profile.role !== 'super_admin') {
@@ -131,11 +132,12 @@ export async function POST(request: NextRequest) {
     }
     console.log('[invite] success, user id:', invited.user.id)
 
-    // Set their profile role + org (the auth trigger creates the row; we upsert to set role/org)
+    // Set their profile role + org + name (the auth trigger creates the row; we upsert to set these)
     await admin.from('profiles').upsert({
       id: invited.user.id,
       role,
       organization_id: organization_id || null,
+      full_name: trimmedName || null,
     })
 
     // Audit log

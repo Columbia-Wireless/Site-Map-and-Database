@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useSearchParams } from 'next/navigation'
-import { ShieldCheck, ShieldOff, ShieldAlert, Loader2, AlertCircle, CheckCircle2, Copy } from 'lucide-react'
+import { ShieldCheck, ShieldOff, ShieldAlert, Loader2, AlertCircle, CheckCircle2, Copy, User, Pencil } from 'lucide-react'
 import Image from 'next/image'
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneusqgcwxwkix.supabase.co'
@@ -25,6 +25,12 @@ function SettingsPageInner() {
   const mfaRequired = searchParams.get('mfaRequired') === '1'
 
   const [userEmail, setUserEmail]   = useState('')
+  const [userId, setUserId]         = useState('')
+  const [fullName, setFullName]     = useState('')
+  const [nameDraft, setNameDraft]   = useState('')
+  const [editingName, setEditingName] = useState(false)
+  const [nameSaving, setNameSaving] = useState(false)
+  const [nameError, setNameError]   = useState('')
   const [enrolled, setEnrolled]     = useState(false)
   const [factorId, setFactorId]     = useState('')
   const [step, setStep]             = useState<Step>('idle')
@@ -40,7 +46,16 @@ function SettingsPageInner() {
   useEffect(() => {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser()
-      if (user) setUserEmail(user.email ?? '')
+      if (user) {
+        setUserEmail(user.email ?? '')
+        setUserId(user.id)
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single()
+        setFullName(profile?.full_name ?? '')
+      }
 
       const { data: factors } = await supabase.auth.mfa.listFactors()
       const totp = factors?.totp?.[0]
@@ -48,6 +63,29 @@ function SettingsPageInner() {
     }
     init()
   }, [])
+
+  function startEditName() {
+    setNameDraft(fullName)
+    setNameError('')
+    setEditingName(true)
+  }
+
+  async function saveName() {
+    const trimmed = nameDraft.trim()
+    if (!trimmed) { setNameError('Name cannot be empty'); return }
+    setNameSaving(true)
+    setNameError('')
+    const res = await fetch('/api/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ full_name: trimmed }),
+    })
+    const data = await res.json()
+    setNameSaving(false)
+    if (!res.ok) { setNameError(data.error ?? 'Failed to save name'); return }
+    setFullName(data.full_name)
+    setEditingName(false)
+  }
 
   async function startEnroll() {
     setLoading(true)
@@ -120,6 +158,77 @@ function SettingsPageInner() {
           </div>
         </div>
       )}
+
+      {/* Profile Card */}
+      <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '20px', borderBottom: '1px solid #f1f5f9' }}>
+          <div style={{ background: '#eff6ff', borderRadius: '10px', padding: '10px' }}>
+            <User size={20} color="#2563eb" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '15px', fontWeight: 600, color: '#0f172a' }}>Profile</div>
+            <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '2px' }}>Your display name, shown across the app</div>
+          </div>
+        </div>
+
+        <div style={{ padding: '20px' }}>
+          {nameError && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#b91c1c' }}>
+              <AlertCircle size={14} /> {nameError}
+            </div>
+          )}
+
+          {!editingName ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Name</div>
+                <div style={{ fontSize: '14px', color: fullName ? '#0f172a' : '#94a3b8', fontStyle: fullName ? 'normal' : 'italic' }}>
+                  {fullName || 'No name set'}
+                </div>
+              </div>
+              <button
+                onClick={startEditName}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'white', color: '#374151', border: '1px solid #d1d5db', borderRadius: '8px', padding: '8px 14px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                <Pencil size={13} /> {fullName ? 'Change' : 'Set name'}
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 220px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Name
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={nameDraft}
+                  onChange={e => setNameDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false) }}
+                  placeholder="Your full name"
+                  maxLength={200}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+              <button
+                onClick={saveName}
+                disabled={nameSaving}
+                style={{ padding: '9px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
+              >
+                {nameSaving ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={14} />}
+                {nameSaving ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                onClick={() => setEditingName(false)}
+                disabled={nameSaving}
+                style={{ padding: '9px 16px', background: 'white', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* MFA Card */}
       <div style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>

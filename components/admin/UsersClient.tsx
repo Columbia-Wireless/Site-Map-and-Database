@@ -48,6 +48,7 @@ export default function UsersClient({
 }) {
   const [users, setUsers] = useState<UserRow[]>(initialUsers)
   const [showInvite, setShowInvite] = useState(false)
+  const [inviteName, setInviteName] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<UserRole>('viewer')
   const [inviteOrg, setInviteOrg] = useState('')
@@ -154,12 +155,13 @@ export default function UsersClient({
     const res = await fetch('/api/admin/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: inviteEmail, role: inviteRole, organization_id: inviteOrg || null }),
+      body: JSON.stringify({ email: inviteEmail, role: inviteRole, organization_id: inviteOrg || null, full_name: inviteName || null }),
     })
     const data = await res.json()
     setInviting(false)
     if (!res.ok) { setInviteError(data.error ?? 'Failed'); return }
     setInviteSuccess(inviteEmail)
+    setInviteName('')
     setInviteEmail('')
     setInviteRole('viewer')
     setInviteOrg('')
@@ -188,7 +190,7 @@ export default function UsersClient({
             <ClipboardList size={15} /> Audit Log
           </button>
           <button
-            onClick={() => { setShowInvite(!showInvite); setInviteError(''); setInviteSuccess('') }}
+            onClick={() => { setShowInvite(!showInvite); setInviteError(''); setInviteSuccess(''); setInviteName('') }}
             style={{ display: 'flex', alignItems: 'center', gap: '7px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', padding: '10px 18px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
           >
             <UserPlus size={15} /> Invite User
@@ -209,6 +211,17 @@ export default function UsersClient({
             Invite New User
           </h2>
           <form onSubmit={handleInvite} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ flex: '1 1 180px' }}>
+              <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Name (optional)</label>
+              <input
+                type="text"
+                value={inviteName}
+                onChange={e => setInviteName(e.target.value)}
+                placeholder="Jane Smith"
+                maxLength={200}
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: '7px', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
             <div style={{ flex: '2 1 220px' }}>
               <label style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Email</label>
               <input
