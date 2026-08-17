@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
 import { getProfile } from '@/lib/profile'
 import { assertSiteVisible } from '@/lib/orgScope'
-import { loadRentScheduleInputs } from '@/lib/rentEngine/adapter'
+import { loadRentScheduleInputs, countLinkedDocuments } from '@/lib/rentEngine/adapter'
 import { generateRentSchedule } from '@/lib/rentEngine/services/timelineEngine'
 
 /**
@@ -50,9 +50,16 @@ export async function GET(
     console.error('[rent-schedule] cache write failed:', cacheError.message)
   }
 
+  // Only fetched when the engine had nothing to work with — distinguishes
+  // "no documents linked at all" from "documents are linked but predate the
+  // SAM 2.0 sync" for the UI, see adapter.ts's countLinkedDocuments() doc.
+  const linkedDocumentCount =
+    inputs.documents.length === 0 ? await countLinkedDocuments(licenseId) : inputs.documents.length
+
   return NextResponse.json({
     licenseId,
     documentCount: inputs.documents.length,
+    linkedDocumentCount,
     ...result,
   })
 }

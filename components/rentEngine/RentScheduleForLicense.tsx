@@ -8,6 +8,7 @@ import { RentScheduleIssue } from './RentScheduleIssues'
 interface ScheduleResponse {
   licenseId: string
   documentCount: number
+  linkedDocumentCount: number
   rows: RentScheduleRow[]
   oneTimeCharges: OneTimeChargeRow[]
   issues: RentScheduleIssue[]
@@ -65,6 +66,26 @@ export default function RentScheduleForLicense({ licenseId, siteId, showSite, sh
   }
 
   if (!data) return null
+
+  // The engine returns a completely empty result (no rows, no issues) when
+  // it had zero usable documents — that's indistinguishable from a real bug
+  // unless we also know whether anything is linked at all. See
+  // countLinkedDocuments()'s doc comment in lib/rentEngine/adapter.ts.
+  const noUsableDocs = data.rows.length === 0 && data.oneTimeCharges.length === 0 && data.issues.length === 0
+  if (noUsableDocs) {
+    if (data.linkedDocumentCount === 0) {
+      return (
+        <div style={{ padding: '16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', color: '#64748b', fontSize: '13px' }}>
+          No documents are linked to this license yet.
+        </div>
+      )
+    }
+    return (
+      <div style={{ padding: '16px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', color: '#92400e', fontSize: '13px' }}>
+        {data.linkedDocumentCount} document{data.linkedDocumentCount !== 1 ? 's are' : ' is'} linked to this license, but none came through the SAM 2.0 sync — the rent engine currently only reads SAM 2.0-synced documents. This is expected for documents uploaded before that integration went live.
+      </div>
+    )
+  }
 
   return (
     <RentScheduleTable

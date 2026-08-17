@@ -244,6 +244,23 @@ export async function buildDocumentRecords(licenseId: string): Promise<DocumentR
 }
 
 /**
+ * Raw count of site_documents linked to this license (license_id = licenseId),
+ * regardless of whether they carry usable SAM 2.0 payload. Lets callers tell
+ * "nothing is linked to this license" apart from "documents are linked but
+ * predate the SAM 2.0 sync" — buildDocumentRecords() silently drops the
+ * latter (see its module doc comment), which otherwise looks identical to
+ * zero documents at all once it reaches the engine.
+ */
+export async function countLinkedDocuments(licenseId: string): Promise<number> {
+  const supabase = getSupabase()
+  const { count } = await supabase
+    .from('site_documents')
+    .select('id', { count: 'exact', head: true })
+    .eq('license_id', licenseId)
+  return count ?? 0
+}
+
+/**
  * Full input bundle for generateRentSchedule(), for one of our internal
  * license IDs. Returns null if the license/site can't be resolved.
  */
