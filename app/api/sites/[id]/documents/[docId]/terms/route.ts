@@ -11,6 +11,54 @@ function getSupabaseAdmin() {
 
 const CRITICAL_FIELDS = ['licensor', 'licensee', 'commencement_date', 'monthly_rent', 'initial_term_years', 'governing_law']
 
+/**
+ * Closes a real gap found 2026-08-18: editing a field here used to only touch
+ * the flat display copy (extracted_terms[key]) — the rent engine reads
+ * extracted_terms._sam2_raw.extractedData verbatim (lib/rentEngine/adapter.ts
+ * toExtractedLeaseDoc()), so a human correction never reached the actual
+ * calculation. This patches the same nested path inside _sam2_raw so the
+ * engine picks up the corrected value on its next read. Only covers fields
+ * that map onto a single, unambiguous nested primitive — renewal_options and
+ * one_time_fee are stored here as summarized display strings (not reversible
+ * into their structured shape) and are intentionally left out; correcting
+ * those requires editing the source document in SAM 2.0 or a dedicated
+ * structured editor, not this generic field patcher.
+ */
+function applyCorrectionToSam2Raw(allTerms: Record<string, any>, field: string, rawValue: unknown) {
+  const raw = allTerms?.['_sam2_raw']
+  const ed = raw?.extractedData
+  if (!ed) return // not a SAM 2.0-sourced document — nothing to patch
+
+  const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue
+
+  switch (field) {
+    case 'licensor':
+      ed.siteIdentity.lessorName = value
+      break
+    case 'licensee':
+      ed.siteIdentity.lesseeName = value
+      break
+    case 'commencement_date':
+      ed.documentMetadata.commencementDate = value || null
+      break
+    case 'signature_date':
+      ed.documentMetadata.executionDate = value
+      break
+    case 'monthly_rent':
+      if (ed.leaseTerms) ed.leaseTerms.baseRent = Number(value) || 0
+      break
+    case 'initial_term_years':
+      if (ed.leaseTerms) ed.leaseTerms.initialTermMonths = Math.round((Number(value) || 0) * 12)
+      break
+    case 'escalation_type':
+      if (ed.leaseTerms?.escalation) ed.leaseTerms.escalation.type = value
+      break
+    default:
+      // Not a field this patcher knows how to map — leave _sam2_raw untouched.
+      break
+  }
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string; docId: string }> }
@@ -32,6 +80,13 @@ export async function PATCH(
     .select('extracted_terms')
     .eq('id', docId)
     .single()
+
+  // Propagate the correction into _sam2_raw so the rent engine (which reads
+  // that, not the flat display fields) actually sees it — see
+  // applyCorrectionToSam2Raw()'s doc comment.
+  if (!field.startsWith('_')) {
+    applyCorrectionToSam2Raw(all_terms, field, field_data?.value)
+  }
 
   // Recompute doc status from updated terms
   const docStatus = computeDocStatus(all_terms)
