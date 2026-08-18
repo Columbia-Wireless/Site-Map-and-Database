@@ -81,19 +81,17 @@ export default function Sam2ImportModal({ onClose, onSynced }: Props) {
 
   return (
     <div
-      onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 9998, background: 'rgba(15,23,42,0.55)',
         backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '20px',
+        padding: 0,
       }}
     >
       <div
-        onClick={e => e.stopPropagation()}
         style={{
-          background: 'white', borderRadius: '14px', width: '100%', maxWidth: '1100px',
+          background: 'white', borderRadius: '14px', width: '100%', maxWidth: '100vw',
+          height: '100%', maxHeight: '100vh',
           boxShadow: '0 24px 64px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column',
-          maxHeight: '90vh',
         }}
       >
         <div style={{
@@ -116,7 +114,7 @@ export default function Sam2ImportModal({ onClose, onSynced }: Props) {
           </button>
         </div>
 
-        <div style={{ padding: '20px 24px 24px', overflow: 'auto' }}>
+        <div style={{ padding: '20px 24px 24px', overflow: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
           {syncError && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: '8px', background: '#fef2f2',
@@ -167,7 +165,9 @@ export default function Sam2ImportModal({ onClose, onSynced }: Props) {
               </button>
             </div>
           )}
-          <Sam2LeaseModule height="72vh" onDocumentParsed={handleDocumentParsed} />
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <Sam2LeaseModule height="100%" onDocumentParsed={handleDocumentParsed} />
+          </div>
         </div>
       </div>
 
