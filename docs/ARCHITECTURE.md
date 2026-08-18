@@ -2,7 +2,7 @@
 
 Internal technical reference for Columbia Wireless Site Asset Management. Audience: developers working on this codebase (VeriPura, and SAM 2.0 integration partners). For the client-facing feature walkthrough, see `Columbia_Wireless_User_Guide.docx` in the project root instead, this document assumes familiarity with the code.
 
-Last reviewed: 2026-08-14. This file is covered by the weekly scheduled documentation review, if it looks stale, that job may have lapsed, check with Thomas.
+Last reviewed: 2026-08-18. This file is covered by the weekly scheduled documentation review, if it looks stale, that job may have lapsed, check with Thomas.
 
 ## Stack
 
@@ -11,7 +11,7 @@ Last reviewed: 2026-08-14. This file is covered by the weekly scheduled document
 - **Hosting**: Google Cloud Run, project `scetv-towers-2025`, region `us-east1`, service name `tower-demo`.
 - **Deploy command**: `gcloud run deploy tower-demo --source "." --region us-east1 --project scetv-towers-2025` (Dockerfile-based, no CI pipeline yet, deploys are manual from a developer's machine).
 - **AI extraction**: Anthropic API (`@anthropic-ai/sdk`), used directly by the legacy document-extraction routes (`app/api/sites/[id]/documents/[docId]/extract`, `app/api/sites/extract-from-lease`, `app/api/sites/[id]/comparables/extract`). Requires `ANTHROPIC_API_KEY`.
-- **External integration**: SAM 2.0 (separate app, built by Onno Stienen), embedded via iframe. See `SAM2_INTEGRATION.md`.
+- **External integration**: SAM 2.0 (separate app, built by Onno Stienen), embedded via iframe. Sync mechanism is transitioning from the iframe event to a server-side webhook (infrastructure not yet built on SAM 2.0's side as of 2026-08-18). See `SAM2_INTEGRATION.md`.
 - **Blockchain notarization**: IOTA SDK (`@iota/iota-sdk`), used by the document notarization flow (`app/api/sites/[id]/documents/[docId]/notarize`) to anchor a document's SHA-256 hash on-chain.
 - **Mapping**: Leaflet / react-leaflet.
 - **PDF/report generation**: `@react-pdf/renderer`, `pdf-parse`.

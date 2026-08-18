@@ -235,19 +235,53 @@ export async function POST(req: NextRequest) {
 
     // ── 3. Upsert the document ──────────────────────────────────────────────
     const docType = isNonInstrument ? 'other' : (DOC_TYPE_MAP[ed.documentMetadata.docType] ?? 'other')
+
+    // Surface SAM 2.0's own validation flags as a single readable note rather
+    // than trying to map each one onto a specific TermsReviewModal field —
+    // Sam2ValidationFlag.code is a loose string, not keyed to our field names.
+    // Shows up in the "Other" group of the review modal so nothing is silently
+    // dropped even when it can't be attached to a specific term.
+    const flagsNote = payload.validationFlags?.length
+      ? payload.validationFlags.map(f => `[${f.severity}] ${f.message}`).join('\n')
+      : null
+
+    const { rate: previewEscalationRate } = isNonInstrument ? { rate: 0 } : simplifyEscalationRate(ed.leaseTerms)
+
     const extractedTerms: Record<string, unknown> = isNonInstrument
       ? {
           // No licensor/licensee/rent fields — this document never named real
           // lease parties, storing them here would misrepresent them as facts.
           document_category: { value: ed.classification?.nonInstrumentKind ?? ed.classification?.role ?? 'non_instrument', confidence: 'high' },
+          ...(flagsNote ? { sam2_validation_flags: { value: flagsNote, confidence: 'medium' } } : {}),
           _sam2_raw: payload,
         }
       : {
           licensor: { value: ed.siteIdentity.lessorName, confidence: 'high' },
           licensee: { value: ed.siteIdentity.lesseeName, confidence: 'high' },
+          signature_date: { value: ed.documentMetadata.executionDate, confidence: 'high' },
           commencement_date: { value: ed.documentMetadata.commencementDate ?? null, confidence: ed.documentMetadata.commencementDate ? 'high' : 'low' },
           monthly_rent: ed.leaseTerms ? { value: ed.leaseTerms.baseRent, confidence: 'high' } : undefined,
           initial_term_years: ed.leaseTerms ? { value: Math.round(ed.leaseTerms.initialTermMonths / 12), confidence: 'high' } : undefined,
+          escalation_type: ed.leaseTerms ? { value: ed.leaseTerms.escalation.type, confidence: 'high' } : undefined,
+          escalation_rate: ed.leaseTerms
+            ? {
+                value: `${previewEscalationRate}%`,
+                confidence: ed.leaseTerms.escalation.type === 'fixed_percentage' || ed.leaseTerms.escalation.type === 'none' ? 'high' : 'medium',
+                note: ed.leaseTerms.escalation.type === 'cpi' || ed.leaseTerms.escalation.type === 'fixed_amount'
+                  ? `Escalation is "${ed.leaseTerms.escalation.type}" — the rent engine uses the full clause, this flat rate is a display simplification only.`
+                  : undefined,
+              }
+            : undefined,
+          one_time_fee: ed.oneTimeFees?.length
+            ? { value: ed.oneTimeFees.map(f => `${f.description}: $${f.amount}`).join('; '), confidence: 'high' }
+            : undefined,
+          renewal_options: ed.leaseTerms
+            ? {
+                value: `${ed.leaseTerms.renewalOptions.count} × ${ed.leaseTerms.renewalOptions.durationMonths}mo${ed.leaseTerms.renewalOptions.isAutomatic ? ', automatic' : ''}`,
+                confidence: 'high',
+              }
+            : undefined,
+          ...(flagsNote ? { sam2_validation_flags: { value: flagsNote, confidence: 'medium' } } : {}),
           // Full SAM 2.0 payload kept verbatim for anything the flat fields above can't
           // represent — amendment deltas, classification, lineage, validation flags, etc.
           // This is what lib/rentEngine/adapter.ts reads back out.
@@ -256,15 +290,33 @@ export async function POST(req: NextRequest) {
 
     const { data: existingDoc } = await supabase
       .from('site_documents')
-      .select('id')
+      .select('id, doc_status')
       .eq('sam2_doc_id', payload.documentId)
       .maybeSingle()
+
+    // Review gate: every SAM 2.0-synced lease-family document starts life as
+    // 'review_required' — the rent engine (lib/rentEngine/adapter.ts) already
+    // treats anything other than 'approved'/'notarized' as 'pending_review'
+    // and excludes it from the schedule fold, so this is what actually keeps
+    // unreviewed numbers out of Billing/Rent Schedule, not just a UI label.
+    // Never silently flips an already-approved document back to
+    // review_required on a re-sync (e.g. a lineage re-announce) — surfacing
+    // that as a fresh review-needed state is a product decision for later,
+    // not something to do by accident here. Non-instrument documents get
+    // 'extracted' directly: there's no lease term to approve, just a category
+    // label, and they never feed the rent engine regardless of status.
+    const docStatus = isNonInstrument
+      ? 'extracted'
+      : (existingDoc?.doc_status === 'approved' || existingDoc?.doc_status === 'notarized')
+        ? existingDoc.doc_status
+        : 'review_required'
 
     let documentId: string
     const docRow = {
       site_id: siteId,
       name: payload.fileName,
       doc_type: docType,
+      doc_status: docStatus,
       extracted_terms: extractedTerms,
       sam2_doc_id: payload.documentId,
     }
@@ -351,6 +403,7 @@ export async function POST(req: NextRequest) {
       hostAgency: hostAgencyResult,
       licensee: { matched: !licenseeCreated, confidence: lesseeMatchConfidence, id: licenseeId, created: licenseeCreated },
       warnings,
+      needsReview: docStatus === 'review_required',
     }
     return NextResponse.json(result)
   } catch (err: any) {

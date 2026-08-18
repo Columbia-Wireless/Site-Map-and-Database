@@ -229,4 +229,9 @@ export interface Sam2SyncResult {
   hostAgency: { matched: boolean; confidence: string; id: string | null; suggestedName: string | null }
   licensee: { matched: boolean; confidence: string; id: string | null; created: boolean }
   warnings: string[]
+  /** True when this document landed as site_documents.doc_status = 'review_required'
+   *  — i.e. it's a lease-family instrument that hasn't been approved yet, so the
+   *  rent engine excludes it from the schedule fold. False for non-instrument
+   *  documents (nothing to approve) and for re-syncs of an already-approved doc. */
+  needsReview: boolean
 }
