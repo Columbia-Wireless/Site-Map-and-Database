@@ -221,7 +221,10 @@ export interface Sam2SyncPayload {
 
 export interface Sam2SyncResult {
   siteId: string
-  licenseId: string
+  /** Null for non-instrument documents (tax forms, insurance certs, exhibits,
+   *  etc.) — these are stored and attached to the site, but never get a
+   *  licensee or license record, since they don't name real lease parties. */
+  licenseId: string | null
   documentId: string
   hostAgency: { matched: boolean; confidence: string; id: string | null; suggestedName: string | null }
   licensee: { matched: boolean; confidence: string; id: string | null; created: boolean }

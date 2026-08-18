@@ -82,6 +82,17 @@ export async function POST(req: NextRequest) {
   // under extractedData, not top-level on the payload — see lib/sam2Types.ts.
   const ed = payload.extractedData
 
+  // Not a lease-family instrument — a tax form, insurance certificate, ledger,
+  // photo, or an exhibit attached to another document. These carry no real
+  // lease parties or terms, so they get stored and attached to the site, but
+  // never get a licensee or license record built from their (unreliable, or
+  // absent) siteIdentity fields. The rent engine's own buildChain() already
+  // excludes classification.role === 'non_instrument' | 'exhibit' from the
+  // schedule fold (lib/rentEngine/services/leaseChain.ts) — this is the
+  // upstream half: don't let one create garbage site/licensee/license data
+  // on the way in either.
+  const isNonInstrument = ed.classification?.role === 'non_instrument' || ed.classification?.role === 'exhibit'
+
   try {
     // ── 1. Resolve or create the site ──────────────────────────────────────
     const { data: existingSite } = await supabase
@@ -93,100 +104,155 @@ export async function POST(req: NextRequest) {
     let siteId: string
     let hostAgencyResult = { matched: false, confidence: 'none', id: null as string | null, suggestedName: null as string | null }
 
-    const agencyMatch = await matchHostAgency(supabase, ed.siteIdentity.lessorName)
-    if (agencyMatch.confidence === 'exact' || agencyMatch.confidence === 'high') {
-      hostAgencyResult = { matched: true, confidence: agencyMatch.confidence, id: agencyMatch.id, suggestedName: agencyMatch.matchedName }
-    } else if (agencyMatch.confidence === 'low') {
-      hostAgencyResult = { matched: false, confidence: 'low', id: null, suggestedName: agencyMatch.matchedName }
-      warnings.push(`Site owner "${ed.siteIdentity.lessorName}" not confidently matched — closest existing match is "${agencyMatch.matchedName}". Left unlinked for manual review.`)
-    } else {
-      warnings.push(`Site owner "${ed.siteIdentity.lessorName}" has no matching record — site created without a linked owner.`)
-    }
-
-    // Tower type: installationType IS the tower_type value now (6 SCETV types,
-    // sent directly — no separate towerType field). Null means the document
-    // didn't state it (zero-hallucination extraction), so default with a
-    // warning rather than guess.
-    let towerType = ed.siteIdentity.installationType
-    if (!towerType) {
-      towerType = 'small_cell'
-      warnings.push(`Tower type not stated in the document — defaulted to "${towerType}". Needs manual confirmation.`)
-    }
-
-    // City/state/zip come from SAM 2.0's geocoding service (extractedData.geocode),
-    // not from document extraction (extractedData.siteIdentity) — siteIdentity's
-    // versions are kept only as a fallback in case a future extraction path
-    // populates them directly.
-    const siteData = {
-      site_code: ed.siteIdentity.siteCode || payload.siteId.slice(0, 12),
-      name: ed.siteIdentity.siteName || ed.siteIdentity.rawAddress,
-      address: ed.siteIdentity.rawAddress,
-      city: ed.geocode?.city || ed.siteIdentity.city || '',
-      state: ed.geocode?.state || ed.siteIdentity.state || '',
-      zip: ed.geocode?.postalCode || ed.siteIdentity.zip || '',
-      lat: ed.geocode?.latitude ?? 0,
-      lng: ed.geocode?.longitude ?? 0,
-      host_agency_id: hostAgencyResult.id,
-      tower_type: towerType,
-      height_ft: ed.siteIdentity.heightFt ?? null,
-      status: 'operational',
-      organization_id: profile.organization_id,
-      sam2_site_id: payload.siteId,
-    }
-
-    if (!siteData.city || !siteData.state || !siteData.zip) {
-      warnings.push('City/state/zip not available from SAM 2.0 geocoding — left blank. Needs manual entry or address-parsing follow-up.')
-    }
-
-    if (existingSite) {
+    if (existingSite && isNonInstrument) {
+      // Supporting paperwork for a site that already exists — attach the
+      // document, don't touch the site record. Its siteIdentity fields
+      // aren't reliable lease data and shouldn't overwrite what a real
+      // lease document already set (owner, tower type, address).
       siteId = existingSite.id
-      const { error } = await supabase.from('tower_sites').update(siteData).eq('id', siteId)
-      if (error) throw new Error(`tower_sites update failed: ${error.message}`)
-    } else {
-      const { data: inserted, error } = await supabase.from('tower_sites').insert([siteData]).select('id').single()
+    } else if (isNonInstrument) {
+      // First document filed for this site happens to be non-lease paperwork
+      // (e.g. arrived out of order in a batch upload). Create a minimal site
+      // shell so the document has somewhere to attach — no owner match
+      // attempted, tower type left at the same forced default a real lease
+      // document would get, both flagged for completion once a base lease
+      // is filed.
+      warnings.push(`This site was created from a non-instrument document (${ed.classification?.nonInstrumentKind ?? ed.classification?.role}), not a lease. Owner and tower type need manual entry once a base lease is filed.`)
+      const { data: inserted, error } = await supabase
+        .from('tower_sites')
+        .insert([{
+          site_code: ed.siteIdentity.siteCode || payload.siteId.slice(0, 12),
+          name: ed.siteIdentity.siteName || ed.siteIdentity.rawAddress || 'Unnamed site',
+          address: ed.siteIdentity.rawAddress || '',
+          city: ed.geocode?.city || ed.siteIdentity.city || '',
+          state: ed.geocode?.state || ed.siteIdentity.state || '',
+          zip: ed.geocode?.postalCode || ed.siteIdentity.zip || '',
+          lat: ed.geocode?.latitude ?? 0,
+          lng: ed.geocode?.longitude ?? 0,
+          host_agency_id: null,
+          tower_type: 'small_cell',
+          height_ft: ed.siteIdentity.heightFt ?? null,
+          status: 'operational',
+          organization_id: profile.organization_id,
+          sam2_site_id: payload.siteId,
+        }])
+        .select('id')
+        .single()
       if (error) throw new Error(`tower_sites insert failed: ${error.message}`)
       siteId = inserted.id
-      await logChange(supabase, siteId, 'site_created', null, `${siteData.name} (via SAM 2.0)`, actor.name, {
+      await logChange(supabase, siteId, 'site_created', null, `${ed.siteIdentity.siteName || ed.siteIdentity.rawAddress || 'Unnamed site'} (via SAM 2.0, non-instrument document)`, actor.name, {
         userId: actor.userId, ip: actor.ip, entityType: 'site',
       })
+    } else {
+      const agencyMatch = await matchHostAgency(supabase, ed.siteIdentity.lessorName)
+      if (agencyMatch.confidence === 'exact' || agencyMatch.confidence === 'high') {
+        hostAgencyResult = { matched: true, confidence: agencyMatch.confidence, id: agencyMatch.id, suggestedName: agencyMatch.matchedName }
+      } else if (agencyMatch.confidence === 'low') {
+        hostAgencyResult = { matched: false, confidence: 'low', id: null, suggestedName: agencyMatch.matchedName }
+        warnings.push(`Site owner "${ed.siteIdentity.lessorName}" not confidently matched — closest existing match is "${agencyMatch.matchedName}". Left unlinked for manual review.`)
+      } else {
+        warnings.push(`Site owner "${ed.siteIdentity.lessorName}" has no matching record — site created without a linked owner.`)
+      }
+
+      // Tower type: installationType IS the tower_type value now (6 SCETV types,
+      // sent directly — no separate towerType field). Null means the document
+      // didn't state it (zero-hallucination extraction), so default with a
+      // warning rather than guess.
+      let towerType = ed.siteIdentity.installationType
+      if (!towerType) {
+        towerType = 'small_cell'
+        warnings.push(`Tower type not stated in the document — defaulted to "${towerType}". Needs manual confirmation.`)
+      }
+
+      // City/state/zip come from SAM 2.0's geocoding service (extractedData.geocode),
+      // not from document extraction (extractedData.siteIdentity) — siteIdentity's
+      // versions are kept only as a fallback in case a future extraction path
+      // populates them directly.
+      const siteData = {
+        site_code: ed.siteIdentity.siteCode || payload.siteId.slice(0, 12),
+        name: ed.siteIdentity.siteName || ed.siteIdentity.rawAddress,
+        address: ed.siteIdentity.rawAddress,
+        city: ed.geocode?.city || ed.siteIdentity.city || '',
+        state: ed.geocode?.state || ed.siteIdentity.state || '',
+        zip: ed.geocode?.postalCode || ed.siteIdentity.zip || '',
+        lat: ed.geocode?.latitude ?? 0,
+        lng: ed.geocode?.longitude ?? 0,
+        host_agency_id: hostAgencyResult.id,
+        tower_type: towerType,
+        height_ft: ed.siteIdentity.heightFt ?? null,
+        status: 'operational',
+        organization_id: profile.organization_id,
+        sam2_site_id: payload.siteId,
+      }
+
+      if (!siteData.city || !siteData.state || !siteData.zip) {
+        warnings.push('City/state/zip not available from SAM 2.0 geocoding — left blank. Needs manual entry or address-parsing follow-up.')
+      }
+
+      if (existingSite) {
+        siteId = existingSite.id
+        const { error } = await supabase.from('tower_sites').update(siteData).eq('id', siteId)
+        if (error) throw new Error(`tower_sites update failed: ${error.message}`)
+      } else {
+        const { data: inserted, error } = await supabase.from('tower_sites').insert([siteData]).select('id').single()
+        if (error) throw new Error(`tower_sites insert failed: ${error.message}`)
+        siteId = inserted.id
+        await logChange(supabase, siteId, 'site_created', null, `${siteData.name} (via SAM 2.0)`, actor.name, {
+          userId: actor.userId, ip: actor.ip, entityType: 'site',
+        })
+      }
     }
 
     // ── 2. Resolve or create the licensee ──────────────────────────────────
-    let licenseeId: string
+    // Skipped entirely for non-instrument documents — see the module note
+    // above. A tax form doesn't name a real lessee, so there's nothing to
+    // match or create a licensee record from.
+    let licenseeId: string | null = null
     let licenseeCreated = false
-    const lesseeMatch = await matchLicensee(supabase, ed.siteIdentity.lesseeName)
-    if (lesseeMatch.confidence === 'exact' || lesseeMatch.confidence === 'high') {
-      licenseeId = lesseeMatch.id!
-    } else {
-      // Unlike host agencies, new carriers showing up is the normal case — auto-create
-      // rather than block the sync, but flag it since a low-confidence match might
-      // actually be an existing carrier under a slightly different extracted name.
-      if (lesseeMatch.confidence === 'low') {
-        warnings.push(`Licensee "${ed.siteIdentity.lesseeName}" not confidently matched (closest: "${lesseeMatch.matchedName}") — created as a new record. Review for a possible duplicate.`)
+    let lesseeMatchConfidence = 'none'
+    if (!isNonInstrument) {
+      const lesseeMatch = await matchLicensee(supabase, ed.siteIdentity.lesseeName)
+      lesseeMatchConfidence = lesseeMatch.confidence
+      if (lesseeMatch.confidence === 'exact' || lesseeMatch.confidence === 'high') {
+        licenseeId = lesseeMatch.id!
+      } else {
+        // Unlike host agencies, new carriers showing up is the normal case — auto-create
+        // rather than block the sync, but flag it since a low-confidence match might
+        // actually be an existing carrier under a slightly different extracted name.
+        if (lesseeMatch.confidence === 'low') {
+          warnings.push(`Licensee "${ed.siteIdentity.lesseeName}" not confidently matched (closest: "${lesseeMatch.matchedName}") — created as a new record. Review for a possible duplicate.`)
+        }
+        const { data: newLicensee, error } = await supabase
+          .from('licensees')
+          .insert([{ name: ed.siteIdentity.lesseeName, status: 'active' }])
+          .select('id')
+          .single()
+        if (error) throw new Error(`licensees insert failed: ${error.message}`)
+        licenseeId = newLicensee.id
+        licenseeCreated = true
       }
-      const { data: newLicensee, error } = await supabase
-        .from('licensees')
-        .insert([{ name: ed.siteIdentity.lesseeName, status: 'active' }])
-        .select('id')
-        .single()
-      if (error) throw new Error(`licensees insert failed: ${error.message}`)
-      licenseeId = newLicensee.id
-      licenseeCreated = true
     }
 
     // ── 3. Upsert the document ──────────────────────────────────────────────
-    const docType = DOC_TYPE_MAP[ed.documentMetadata.docType] ?? 'other'
-    const extractedTerms: Record<string, unknown> = {
-      licensor: { value: ed.siteIdentity.lessorName, confidence: 'high' },
-      licensee: { value: ed.siteIdentity.lesseeName, confidence: 'high' },
-      commencement_date: { value: ed.documentMetadata.commencementDate ?? null, confidence: ed.documentMetadata.commencementDate ? 'high' : 'low' },
-      monthly_rent: ed.leaseTerms ? { value: ed.leaseTerms.baseRent, confidence: 'high' } : undefined,
-      initial_term_years: ed.leaseTerms ? { value: Math.round(ed.leaseTerms.initialTermMonths / 12), confidence: 'high' } : undefined,
-      // Full SAM 2.0 payload kept verbatim for anything the flat fields above can't
-      // represent — amendment deltas, classification, lineage, validation flags, etc.
-      // This is what lib/rentEngine/adapter.ts reads back out.
-      _sam2_raw: payload,
-    }
+    const docType = isNonInstrument ? 'other' : (DOC_TYPE_MAP[ed.documentMetadata.docType] ?? 'other')
+    const extractedTerms: Record<string, unknown> = isNonInstrument
+      ? {
+          // No licensor/licensee/rent fields — this document never named real
+          // lease parties, storing them here would misrepresent them as facts.
+          document_category: { value: ed.classification?.nonInstrumentKind ?? ed.classification?.role ?? 'non_instrument', confidence: 'high' },
+          _sam2_raw: payload,
+        }
+      : {
+          licensor: { value: ed.siteIdentity.lessorName, confidence: 'high' },
+          licensee: { value: ed.siteIdentity.lesseeName, confidence: 'high' },
+          commencement_date: { value: ed.documentMetadata.commencementDate ?? null, confidence: ed.documentMetadata.commencementDate ? 'high' : 'low' },
+          monthly_rent: ed.leaseTerms ? { value: ed.leaseTerms.baseRent, confidence: 'high' } : undefined,
+          initial_term_years: ed.leaseTerms ? { value: Math.round(ed.leaseTerms.initialTermMonths / 12), confidence: 'high' } : undefined,
+          // Full SAM 2.0 payload kept verbatim for anything the flat fields above can't
+          // represent — amendment deltas, classification, lineage, validation flags, etc.
+          // This is what lib/rentEngine/adapter.ts reads back out.
+          _sam2_raw: payload,
+        }
 
     const { data: existingDoc } = await supabase
       .from('site_documents')
@@ -217,64 +283,73 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 4. Upsert the license/agreement ─────────────────────────────────────
-    const { rate: escalationRate, warning: escalationWarning } = simplifyEscalationRate(ed.leaseTerms)
-    if (escalationWarning) warnings.push(escalationWarning)
+    // Skipped entirely for non-instrument documents — no lease terms to
+    // record, and no licensee to attach it to. The document stays in
+    // site_documents with license_id left null; a human files it against
+    // the right agreement manually if it needs to be, same as any other
+    // supporting paperwork.
+    let licenseId: string | null = null
+    if (!isNonInstrument) {
+      const { rate: escalationRate, warning: escalationWarning } = simplifyEscalationRate(ed.leaseTerms)
+      if (escalationWarning) warnings.push(escalationWarning)
 
-    const { data: existingLicense } = await supabase
-      .from('site_licenses')
-      .select('id')
-      .eq('sam2_agreement_id', payload.agreementId)
-      .maybeSingle()
-
-    const licenseRow = {
-      site_id: siteId,
-      licensee_id: licenseeId,
-      annual_rent: computeAnnualRent(ed.leaseTerms),
-      escalation_rate: escalationRate,
-      escalation_detail: ed.leaseTerms?.escalation ?? null,
-      renewal_detail: ed.leaseTerms?.renewalOptions ?? null,
-      one_time_fees: ed.oneTimeFees ?? null,
-      license_start: ed.documentMetadata.commencementDate || ed.documentMetadata.effectiveDate || ed.documentMetadata.executionDate,
-      license_end: ed.leaseTerms?.expirationDate ?? null,
-      status: 'active',
-      document_id: documentId,
-      sam2_agreement_id: payload.agreementId,
-    }
-
-    let licenseId: string
-    if (existingLicense) {
-      licenseId = existingLicense.id
-      const { error } = await supabase.from('site_licenses').update(licenseRow).eq('id', licenseId)
-      if (error) throw new Error(`site_licenses update failed: ${error.message}`)
-    } else {
-      const { data: inserted, error } = await supabase
+      const { data: existingLicense } = await supabase
         .from('site_licenses')
-        .insert([{ ...licenseRow, contract_type: 'Base Agreement', invoice_method: 'None', mount_type: 'Primary' }])
         .select('id')
-        .single()
-      if (error) throw new Error(`site_licenses insert failed: ${error.message}`)
-      licenseId = inserted.id
-      await logChange(supabase, siteId, 'license_added', null, `${ed.siteIdentity.lesseeName} (via SAM 2.0)`, actor.name, {
-        userId: actor.userId, ip: actor.ip, entityType: 'site',
-      })
-    }
+        .eq('sam2_agreement_id', payload.agreementId)
+        .maybeSingle()
 
-    // Link this document back to its agreement, now that the license row is
-    // resolved. This is what lets the rent engine pull the full document
-    // chain (base agreement through every amendment) for one lease — see
-    // supabase/rent_engine_schema.sql.
-    const { error: linkError } = await supabase
-      .from('site_documents')
-      .update({ license_id: licenseId })
-      .eq('id', documentId)
-    if (linkError) warnings.push(`Document synced but could not be linked to its agreement: ${linkError.message}`)
+      const licenseRow = {
+        site_id: siteId,
+        licensee_id: licenseeId,
+        annual_rent: computeAnnualRent(ed.leaseTerms),
+        escalation_rate: escalationRate,
+        escalation_detail: ed.leaseTerms?.escalation ?? null,
+        renewal_detail: ed.leaseTerms?.renewalOptions ?? null,
+        one_time_fees: ed.oneTimeFees ?? null,
+        license_start: ed.documentMetadata.commencementDate || ed.documentMetadata.effectiveDate || ed.documentMetadata.executionDate,
+        license_end: ed.leaseTerms?.expirationDate ?? null,
+        status: 'active',
+        document_id: documentId,
+        sam2_agreement_id: payload.agreementId,
+      }
+
+      if (existingLicense) {
+        licenseId = existingLicense.id
+        const { error } = await supabase.from('site_licenses').update(licenseRow).eq('id', licenseId)
+        if (error) throw new Error(`site_licenses update failed: ${error.message}`)
+      } else {
+        const { data: inserted, error } = await supabase
+          .from('site_licenses')
+          .insert([{ ...licenseRow, contract_type: 'Base Agreement', invoice_method: 'None', mount_type: 'Primary' }])
+          .select('id')
+          .single()
+        if (error) throw new Error(`site_licenses insert failed: ${error.message}`)
+        licenseId = inserted.id
+        await logChange(supabase, siteId, 'license_added', null, `${ed.siteIdentity.lesseeName} (via SAM 2.0)`, actor.name, {
+          userId: actor.userId, ip: actor.ip, entityType: 'site',
+        })
+      }
+
+      // Link this document back to its agreement, now that the license row is
+      // resolved. This is what lets the rent engine pull the full document
+      // chain (base agreement through every amendment) for one lease — see
+      // supabase/rent_engine_schema.sql.
+      const { error: linkError } = await supabase
+        .from('site_documents')
+        .update({ license_id: licenseId })
+        .eq('id', documentId)
+      if (linkError) warnings.push(`Document synced but could not be linked to its agreement: ${linkError.message}`)
+    } else {
+      warnings.push('Non-instrument document — stored and attached to the site, not linked to any license.')
+    }
 
     const result: Sam2SyncResult = {
       siteId,
       licenseId,
       documentId,
       hostAgency: hostAgencyResult,
-      licensee: { matched: !licenseeCreated, confidence: lesseeMatch.confidence, id: licenseeId, created: licenseeCreated },
+      licensee: { matched: !licenseeCreated, confidence: lesseeMatchConfidence, id: licenseeId, created: licenseeCreated },
       warnings,
     }
     return NextResponse.json(result)
