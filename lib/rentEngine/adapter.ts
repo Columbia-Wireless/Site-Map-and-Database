@@ -20,28 +20,26 @@ import type {
  * extracted_terms shape and are not mapped here — feeding those into the
  * engine is separate, unscoped work, not silently guessed at.
  *
- * KNOWN GAP, not fixable on our side alone: the real DocumentRecord type
- * carries `classification` (execution status, instrument role), `lineage`,
- * `delta` (amendment-specific field changes), `validationFlags`, and
- * `rawMarkdown` — none of which SAM2_DOCUMENT_PARSED currently sends us
- * (see lib/sam2Types.ts). This adapter degrades gracefully rather than
- * guessing at any of them:
- *   - classification: left undefined. isInForce() does not exclude a
- *     record with no classification (see types/lease.ts) — absence is
- *     safe, invention would not be.
- *   - lineage: left undefined. buildChain()/resolveLineage() fall back to
- *     date-based ordering when lineage isn't supplied.
- *   - delta: left undefined for amendments, since our payload only ever
- *     carries a full leaseTerms snapshot, never field-level changes. The
- *     engine's documented fallback applies the full term set wholesale and
- *     raises an info-level AMENDMENT_APPLIED_WHOLESALE flag — correct,
- *     visible behavior, just not the precise selective fold a real delta
- *     would give. This is exactly the "document data contract" gap flagged
- *     to Onno on 8/17 — closing it requires SAM 2.0 to start sending delta/
- *     classification/lineage, not a fix on our end.
+ * As of 2026-08-18, classification, delta, lineage, and validationFlags are
+ * all live in the SAM 2.0 payload (confirmed with Onno) and mapped below —
+ * this used to be a documented gap ("degrades gracefully by leaving these
+ * undefined"), it no longer is:
+ *   - classification, delta: nested under payload.extractedData, mapped
+ *     directly — same nested shapes the engine itself expects.
+ *   - lineage: top-level on the payload, mapped directly. Can be null when
+ *     a document hasn't been through SAM 2.0's cross-document lineage pass
+ *     yet — buildChain()/resolveLineage() fall back to date-based ordering
+ *     in that case, same as before. SAM 2.0 re-announces the document (new
+ *     sync call, same sam2_doc_id) once lineage resolves.
+ *   - validationFlags: top-level on the payload, mapped directly.
  *   - status: mapped from our own site_documents.doc_status ('approved' or
  *     'notarized' -> 'confirmed', everything else -> 'pending_review').
  *     This is a real fact we hold, not a guess.
+ *
+ * Two loose casts below (validationFlags' `code`, classification's nested
+ * unions) trust SAM 2.0's payload rather than re-validating every enum
+ * value against our mirrored types in lib/sam2Types.ts — those are informational/
+ * display fields, not branched on by the engine's own calculation logic.
  */
 
 type DbSite = {
@@ -112,13 +110,14 @@ function getSam2Payload(extractedTerms: Record<string, unknown> | null): Sam2Syn
 }
 
 function toExtractedLeaseDoc(payload: Sam2SyncPayload): ExtractedLeaseDoc {
+  const ed = payload.extractedData
   return {
     documentMetadata: {
-      docType: payload.documentMetadata.docType,
-      referenceNumber: payload.documentMetadata.referenceNumber,
-      executionDate: payload.documentMetadata.executionDate,
-      effectiveDate: payload.documentMetadata.effectiveDate,
-      commencementDate: payload.documentMetadata.commencementDate,
+      docType: ed.documentMetadata.docType,
+      referenceNumber: ed.documentMetadata.referenceNumber,
+      executionDate: ed.documentMetadata.executionDate,
+      effectiveDate: ed.documentMetadata.effectiveDate,
+      commencementDate: ed.documentMetadata.commencementDate,
       // Not carried by Sam2SyncPayload today — defaults to false (not
       // conditional) rather than guessing at conditional language. Real
       // conditional-commencement leases will need this added to the sync
@@ -126,39 +125,40 @@ function toExtractedLeaseDoc(payload: Sam2SyncPayload): ExtractedLeaseDoc {
       isCommencementConditional: false,
     },
     siteIdentity: {
-      siteName: payload.siteIdentity.siteName,
-      siteCode: payload.siteIdentity.siteCode,
-      rawAddress: payload.siteIdentity.rawAddress,
-      lessorName: payload.siteIdentity.lessorName,
-      lesseeName: payload.siteIdentity.lesseeName,
-      installationType: payload.siteIdentity.installationType
-        ? SAM2_TOWER_TO_INSTALLATION[payload.siteIdentity.installationType]
+      siteName: ed.siteIdentity.siteName,
+      siteCode: ed.siteIdentity.siteCode,
+      rawAddress: ed.siteIdentity.rawAddress,
+      lessorName: ed.siteIdentity.lessorName,
+      lesseeName: ed.siteIdentity.lesseeName,
+      installationType: ed.siteIdentity.installationType
+        ? SAM2_TOWER_TO_INSTALLATION[ed.siteIdentity.installationType]
         : 'other',
-      // Real fact from the SAM 2.0 payload, not previously mapped because
-      // the engine's SiteIdentity had no field for it before this pull.
-      heightFt: payload.siteIdentity.heightFt ?? undefined,
+      heightFt: ed.siteIdentity.heightFt ?? undefined,
     },
-    oneTimeFees: (payload.oneTimeFees ?? []).map(f => ({
+    oneTimeFees: (ed.oneTimeFees ?? []).map(f => ({
       description: f.description,
       amount: f.amount,
       dueDateOffsetDays: f.dueDateOffsetDays,
     })),
-    // leaseTerms is always a full snapshot in our current payload, never a
-    // delta — see the module doc comment above for what this means for
-    // amendments in the fold.
-    leaseTerms: payload.leaseTerms
+    leaseTerms: ed.leaseTerms
       ? {
-          baseRent: payload.leaseTerms.baseRent,
-          paymentFrequency: payload.leaseTerms.paymentFrequency,
-          currency: payload.leaseTerms.currency,
-          initialTermMonths: payload.leaseTerms.initialTermMonths,
-          expirationDate: payload.leaseTerms.expirationDate,
-          isMonthToMonth: payload.leaseTerms.isMonthToMonth,
-          renewalOptions: payload.leaseTerms.renewalOptions,
-          escalation: payload.leaseTerms.escalation,
+          baseRent: ed.leaseTerms.baseRent,
+          paymentFrequency: ed.leaseTerms.paymentFrequency,
+          currency: ed.leaseTerms.currency,
+          initialTermMonths: ed.leaseTerms.initialTermMonths,
+          expirationDate: ed.leaseTerms.expirationDate,
+          isMonthToMonth: ed.leaseTerms.isMonthToMonth,
+          renewalOptions: ed.leaseTerms.renewalOptions,
+          escalation: ed.leaseTerms.escalation,
         }
       : undefined,
-    // delta intentionally omitted — see module doc comment.
+    // delta: present on amendment-family instruments, absent on base
+    // agreements — same shape the engine expects (path/operation/value/
+    // changeEffectiveDate/sourceQuote), so a direct cast rather than a
+    // field-by-field rebuild. See module doc comment on the loose-cast policy.
+    delta: ed.delta as ExtractedLeaseDoc['delta'],
+    // classification: role + execution status, direct cast for the same reason.
+    classification: ed.classification as ExtractedLeaseDoc['classification'],
   }
 }
 
@@ -230,16 +230,21 @@ export async function buildDocumentRecords(licenseId: string): Promise<DocumentR
     records.push({
       docId: doc.id,
       agreementId: licenseId,
-      siteId: payload.sam2SiteId,
+      siteId: payload.siteId,
       fileName: doc.name,
-      docType: OUR_DOC_TYPE_TO_ENGINE[doc.doc_type] ?? payload.documentMetadata.docType,
+      docType: OUR_DOC_TYPE_TO_ENGINE[doc.doc_type] ?? payload.extractedData.documentMetadata.docType,
       effectiveDate:
-        payload.documentMetadata.effectiveDate ?? payload.documentMetadata.executionDate,
-      executionDate: payload.documentMetadata.executionDate,
+        payload.extractedData.documentMetadata.effectiveDate ?? payload.extractedData.documentMetadata.executionDate,
+      executionDate: payload.extractedData.documentMetadata.executionDate,
       status: mapDocStatus(doc.doc_status),
       rawMarkdown: '', // not stored — see module doc comment; only used for near-duplicate text comparison, harmless empty
       data: toExtractedLeaseDoc(payload),
-      validationFlags: [], // not carried by our sync payload today
+      // Null until SAM 2.0's cross-document lineage pass resolves it — see
+      // lib/sam2Types.ts. buildChain() falls back to date-based ordering
+      // when this is undefined, so pass through null as undefined rather
+      // than a value the engine would treat as "resolved, no relationship."
+      lineage: (payload.lineage ?? undefined) as DocumentRecord['lineage'],
+      validationFlags: (payload.validationFlags ?? []) as DocumentRecord['validationFlags'],
       createdAt: doc.uploaded_at ?? new Date(0).toISOString(),
       contentHash: doc.file_hash ?? undefined, // real value — we already compute this for notarization
     })

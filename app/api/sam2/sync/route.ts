@@ -3,18 +3,22 @@ import { getSupabase } from '@/lib/supabase'
 import { getProfile, canEdit } from '@/lib/profile'
 import { getActorInfo, logChange } from '@/lib/audit'
 import { matchHostAgency, matchLicensee } from '@/lib/sam2Match'
-import type { Sam2SyncPayload, Sam2SyncResult, Sam2DocType } from '@/lib/sam2Types'
+import type { Sam2SyncPayload, Sam2SyncResult, Sam2DocType, Sam2LeaseTerms } from '@/lib/sam2Types'
 
 /**
  * Receives a SAM2_DOCUMENT_PARSED payload (relayed by the client from
  * Sam2ImportModal) and syncs it into tower_sites / site_licenses /
  * site_documents. Idempotent on sam2_site_id / sam2_agreement_id / sam2_doc_id
- * — safe to call more than once for the same document (e.g. a re-sync).
+ * — safe to call more than once for the same document (e.g. a re-sync or a
+ * re-announce after lineage resolves, see lib/sam2Types.ts).
  *
- * Payload shape confirmed 8/13/26 against the real SAM 2.0 event. See
- * lib/sam2Types.ts for two mapping quirks: installationType carries the
- * tower_type value directly (no separate towerType field), and city/state/zip
- * come from payload.geocode (postalCode), not payload.siteIdentity.
+ * Payload shape CORRECTED 2026-08-18 (see lib/sam2Types.ts's module comment
+ * for the full story) — siteIdentity/leaseTerms/documentMetadata/geocode all
+ * live under payload.extractedData, not top-level, and the id fields are
+ * payload.documentId/siteId/agreementId, not sam2DocId/sam2SiteId/
+ * sam2AgreementId. The previous shape had never been exercised against a
+ * real payload. installationType carries the tower_type value directly (no
+ * separate towerType field).
  */
 
 const DOC_TYPE_MAP: Record<Sam2DocType, string> = {
@@ -27,7 +31,7 @@ const DOC_TYPE_MAP: Record<Sam2DocType, string> = {
   management_agreement: 'other',
 }
 
-function computeAnnualRent(leaseTerms: Sam2SyncPayload['leaseTerms']): number {
+function computeAnnualRent(leaseTerms: Sam2LeaseTerms | undefined): number {
   if (!leaseTerms) return 0
   const multiplier = { monthly: 12, quarterly: 4, annually: 1 }[leaseTerms.paymentFrequency] ?? 1
   return leaseTerms.baseRent * multiplier
@@ -40,7 +44,7 @@ function computeAnnualRent(leaseTerms: Sam2SyncPayload['leaseTerms']): number {
  * escalation_detail — this is a lossy simplification for anything that isn't a
  * plain fixed-percentage escalation, flagged via the warnings array.
  */
-function simplifyEscalationRate(leaseTerms: Sam2SyncPayload['leaseTerms']): { rate: number; warning: string | null } {
+function simplifyEscalationRate(leaseTerms: Sam2LeaseTerms | undefined): { rate: number; warning: string | null } {
   const esc = leaseTerms?.escalation
   if (!esc) return { rate: 0, warning: null }
   if (esc.type === 'fixed_percentage') return { rate: esc.value * 100, warning: null }
@@ -67,64 +71,67 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  if (!payload.sam2SiteId || !payload.sam2AgreementId || !payload.sam2DocId || !payload.siteIdentity) {
-    return NextResponse.json({ error: 'sam2SiteId, sam2AgreementId, sam2DocId, and siteIdentity are required' }, { status: 400 })
+  if (!payload.siteId || !payload.agreementId || !payload.documentId || !payload.extractedData?.siteIdentity) {
+    return NextResponse.json({ error: 'siteId, agreementId, documentId, and extractedData.siteIdentity are required' }, { status: 400 })
   }
 
   const supabase = getSupabase()
   const actor = await getActorInfo()
   const warnings: string[] = []
+  // siteIdentity/leaseTerms/documentMetadata/oneTimeFees/geocode all live
+  // under extractedData, not top-level on the payload — see lib/sam2Types.ts.
+  const ed = payload.extractedData
 
   try {
     // ── 1. Resolve or create the site ──────────────────────────────────────
     const { data: existingSite } = await supabase
       .from('tower_sites')
       .select('id')
-      .eq('sam2_site_id', payload.sam2SiteId)
+      .eq('sam2_site_id', payload.siteId)
       .maybeSingle()
 
     let siteId: string
     let hostAgencyResult = { matched: false, confidence: 'none', id: null as string | null, suggestedName: null as string | null }
 
-    const agencyMatch = await matchHostAgency(supabase, payload.siteIdentity.lessorName)
+    const agencyMatch = await matchHostAgency(supabase, ed.siteIdentity.lessorName)
     if (agencyMatch.confidence === 'exact' || agencyMatch.confidence === 'high') {
       hostAgencyResult = { matched: true, confidence: agencyMatch.confidence, id: agencyMatch.id, suggestedName: agencyMatch.matchedName }
     } else if (agencyMatch.confidence === 'low') {
       hostAgencyResult = { matched: false, confidence: 'low', id: null, suggestedName: agencyMatch.matchedName }
-      warnings.push(`Site owner "${payload.siteIdentity.lessorName}" not confidently matched — closest existing match is "${agencyMatch.matchedName}". Left unlinked for manual review.`)
+      warnings.push(`Site owner "${ed.siteIdentity.lessorName}" not confidently matched — closest existing match is "${agencyMatch.matchedName}". Left unlinked for manual review.`)
     } else {
-      warnings.push(`Site owner "${payload.siteIdentity.lessorName}" has no matching record — site created without a linked owner.`)
+      warnings.push(`Site owner "${ed.siteIdentity.lessorName}" has no matching record — site created without a linked owner.`)
     }
 
     // Tower type: installationType IS the tower_type value now (6 SCETV types,
     // sent directly — no separate towerType field). Null means the document
     // didn't state it (zero-hallucination extraction), so default with a
     // warning rather than guess.
-    let towerType = payload.siteIdentity.installationType
+    let towerType = ed.siteIdentity.installationType
     if (!towerType) {
       towerType = 'small_cell'
       warnings.push(`Tower type not stated in the document — defaulted to "${towerType}". Needs manual confirmation.`)
     }
 
-    // City/state/zip come from SAM 2.0's geocoding service (payload.geocode),
-    // not from document extraction (payload.siteIdentity) — siteIdentity's
+    // City/state/zip come from SAM 2.0's geocoding service (extractedData.geocode),
+    // not from document extraction (extractedData.siteIdentity) — siteIdentity's
     // versions are kept only as a fallback in case a future extraction path
     // populates them directly.
     const siteData = {
-      site_code: payload.siteIdentity.siteCode || payload.sam2SiteId.slice(0, 12),
-      name: payload.siteIdentity.siteName || payload.siteIdentity.rawAddress,
-      address: payload.siteIdentity.rawAddress,
-      city: payload.geocode?.city || payload.siteIdentity.city || '',
-      state: payload.geocode?.state || payload.siteIdentity.state || '',
-      zip: payload.geocode?.postalCode || payload.siteIdentity.zip || '',
-      lat: payload.geocode?.latitude ?? 0,
-      lng: payload.geocode?.longitude ?? 0,
+      site_code: ed.siteIdentity.siteCode || payload.siteId.slice(0, 12),
+      name: ed.siteIdentity.siteName || ed.siteIdentity.rawAddress,
+      address: ed.siteIdentity.rawAddress,
+      city: ed.geocode?.city || ed.siteIdentity.city || '',
+      state: ed.geocode?.state || ed.siteIdentity.state || '',
+      zip: ed.geocode?.postalCode || ed.siteIdentity.zip || '',
+      lat: ed.geocode?.latitude ?? 0,
+      lng: ed.geocode?.longitude ?? 0,
       host_agency_id: hostAgencyResult.id,
       tower_type: towerType,
-      height_ft: payload.siteIdentity.heightFt ?? null,
+      height_ft: ed.siteIdentity.heightFt ?? null,
       status: 'operational',
       organization_id: profile.organization_id,
-      sam2_site_id: payload.sam2SiteId,
+      sam2_site_id: payload.siteId,
     }
 
     if (!siteData.city || !siteData.state || !siteData.zip) {
@@ -147,7 +154,7 @@ export async function POST(req: NextRequest) {
     // ── 2. Resolve or create the licensee ──────────────────────────────────
     let licenseeId: string
     let licenseeCreated = false
-    const lesseeMatch = await matchLicensee(supabase, payload.siteIdentity.lesseeName)
+    const lesseeMatch = await matchLicensee(supabase, ed.siteIdentity.lesseeName)
     if (lesseeMatch.confidence === 'exact' || lesseeMatch.confidence === 'high') {
       licenseeId = lesseeMatch.id!
     } else {
@@ -155,11 +162,11 @@ export async function POST(req: NextRequest) {
       // rather than block the sync, but flag it since a low-confidence match might
       // actually be an existing carrier under a slightly different extracted name.
       if (lesseeMatch.confidence === 'low') {
-        warnings.push(`Licensee "${payload.siteIdentity.lesseeName}" not confidently matched (closest: "${lesseeMatch.matchedName}") — created as a new record. Review for a possible duplicate.`)
+        warnings.push(`Licensee "${ed.siteIdentity.lesseeName}" not confidently matched (closest: "${lesseeMatch.matchedName}") — created as a new record. Review for a possible duplicate.`)
       }
       const { data: newLicensee, error } = await supabase
         .from('licensees')
-        .insert([{ name: payload.siteIdentity.lesseeName, status: 'active' }])
+        .insert([{ name: ed.siteIdentity.lesseeName, status: 'active' }])
         .select('id')
         .single()
       if (error) throw new Error(`licensees insert failed: ${error.message}`)
@@ -168,22 +175,23 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 3. Upsert the document ──────────────────────────────────────────────
-    const docType = DOC_TYPE_MAP[payload.documentMetadata.docType] ?? 'other'
+    const docType = DOC_TYPE_MAP[ed.documentMetadata.docType] ?? 'other'
     const extractedTerms: Record<string, unknown> = {
-      licensor: { value: payload.siteIdentity.lessorName, confidence: 'high' },
-      licensee: { value: payload.siteIdentity.lesseeName, confidence: 'high' },
-      commencement_date: { value: payload.documentMetadata.commencementDate ?? null, confidence: payload.documentMetadata.commencementDate ? 'high' : 'low' },
-      monthly_rent: payload.leaseTerms ? { value: payload.leaseTerms.baseRent, confidence: 'high' } : undefined,
-      initial_term_years: payload.leaseTerms ? { value: Math.round(payload.leaseTerms.initialTermMonths / 12), confidence: 'high' } : undefined,
+      licensor: { value: ed.siteIdentity.lessorName, confidence: 'high' },
+      licensee: { value: ed.siteIdentity.lesseeName, confidence: 'high' },
+      commencement_date: { value: ed.documentMetadata.commencementDate ?? null, confidence: ed.documentMetadata.commencementDate ? 'high' : 'low' },
+      monthly_rent: ed.leaseTerms ? { value: ed.leaseTerms.baseRent, confidence: 'high' } : undefined,
+      initial_term_years: ed.leaseTerms ? { value: Math.round(ed.leaseTerms.initialTermMonths / 12), confidence: 'high' } : undefined,
       // Full SAM 2.0 payload kept verbatim for anything the flat fields above can't
-      // represent — amendment deltas, insurance/utilities/holdover terms, etc.
+      // represent — amendment deltas, classification, lineage, validation flags, etc.
+      // This is what lib/rentEngine/adapter.ts reads back out.
       _sam2_raw: payload,
     }
 
     const { data: existingDoc } = await supabase
       .from('site_documents')
       .select('id')
-      .eq('sam2_doc_id', payload.sam2DocId)
+      .eq('sam2_doc_id', payload.documentId)
       .maybeSingle()
 
     let documentId: string
@@ -192,7 +200,7 @@ export async function POST(req: NextRequest) {
       name: payload.fileName,
       doc_type: docType,
       extracted_terms: extractedTerms,
-      sam2_doc_id: payload.sam2DocId,
+      sam2_doc_id: payload.documentId,
     }
     if (existingDoc) {
       documentId = existingDoc.id
@@ -209,28 +217,28 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 4. Upsert the license/agreement ─────────────────────────────────────
-    const { rate: escalationRate, warning: escalationWarning } = simplifyEscalationRate(payload.leaseTerms)
+    const { rate: escalationRate, warning: escalationWarning } = simplifyEscalationRate(ed.leaseTerms)
     if (escalationWarning) warnings.push(escalationWarning)
 
     const { data: existingLicense } = await supabase
       .from('site_licenses')
       .select('id')
-      .eq('sam2_agreement_id', payload.sam2AgreementId)
+      .eq('sam2_agreement_id', payload.agreementId)
       .maybeSingle()
 
     const licenseRow = {
       site_id: siteId,
       licensee_id: licenseeId,
-      annual_rent: computeAnnualRent(payload.leaseTerms),
+      annual_rent: computeAnnualRent(ed.leaseTerms),
       escalation_rate: escalationRate,
-      escalation_detail: payload.leaseTerms?.escalation ?? null,
-      renewal_detail: payload.leaseTerms?.renewalOptions ?? null,
-      one_time_fees: payload.oneTimeFees ?? null,
-      license_start: payload.documentMetadata.commencementDate || payload.documentMetadata.effectiveDate || payload.documentMetadata.executionDate,
-      license_end: payload.leaseTerms?.expirationDate ?? null,
+      escalation_detail: ed.leaseTerms?.escalation ?? null,
+      renewal_detail: ed.leaseTerms?.renewalOptions ?? null,
+      one_time_fees: ed.oneTimeFees ?? null,
+      license_start: ed.documentMetadata.commencementDate || ed.documentMetadata.effectiveDate || ed.documentMetadata.executionDate,
+      license_end: ed.leaseTerms?.expirationDate ?? null,
       status: 'active',
       document_id: documentId,
-      sam2_agreement_id: payload.sam2AgreementId,
+      sam2_agreement_id: payload.agreementId,
     }
 
     let licenseId: string
@@ -246,7 +254,7 @@ export async function POST(req: NextRequest) {
         .single()
       if (error) throw new Error(`site_licenses insert failed: ${error.message}`)
       licenseId = inserted.id
-      await logChange(supabase, siteId, 'license_added', null, `${payload.siteIdentity.lesseeName} (via SAM 2.0)`, actor.name, {
+      await logChange(supabase, siteId, 'license_added', null, `${ed.siteIdentity.lesseeName} (via SAM 2.0)`, actor.name, {
         userId: actor.userId, ip: actor.ip, entityType: 'site',
       })
     }

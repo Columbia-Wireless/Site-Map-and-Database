@@ -8,11 +8,12 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneu
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZmbnRwZHBuZXVzcWdjd3h3a2l4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NTg2MzEsImV4cCI6MjA5MzUzNDYzMX0.kFZ6b2WKAl7GVsEQZeO33qcxhyBruQlTfW0eZfkcg1c'
 
 /**
- * Payload shape is not fully confirmed yet — SAM 2.0 today only sends
- * {docId, siteId, agreementId, fileName, docType}; the full extracted record
- * requested in docs/scetv-integration-requirements.md hasn't landed. Typed as
- * unknown here deliberately rather than asserting a shape we haven't verified
- * — see lib/sam2Types.ts for the shape /api/sam2/sync expects once it has.
+ * Payload shape confirmed 2026-08-18 — see lib/sam2Types.ts's Sam2SyncPayload
+ * and its module comment for the full shape and history. Typed as unknown
+ * here (rather than importing Sam2SyncPayload) because this component is a
+ * dumb relay: it passes whatever the postMessage event contains straight
+ * through to onDocumentParsed without inspecting it. /api/sam2/sync is
+ * where the shape is actually asserted and validated.
  */
 export type Sam2DocumentParsedPayload = unknown
 

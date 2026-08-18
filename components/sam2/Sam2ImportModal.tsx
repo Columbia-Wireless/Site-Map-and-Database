@@ -16,11 +16,9 @@ export default function Sam2ImportModal({ onClose, onSynced }: Props) {
   const [warnings, setWarnings] = useState<string[]>([])
   const [syncedCount, setSyncedCount] = useState(0)
 
-  // NOTE: SAM2_DOCUMENT_PARSED currently only carries {docId, siteId, agreementId,
-  // fileName, docType} — not enough for /api/sam2/sync to act on. This POSTs
-  // whatever the event actually contains; once SAM 2.0 emits the full extracted
-  // record (per docs/scetv-integration-requirements.md), this starts working
-  // end-to-end with no changes needed here.
+  // Payload shape confirmed 2026-08-18 — see lib/sam2Types.ts's module comment.
+  // This POSTs whatever the event actually contains, untouched; /api/sam2/sync
+  // does all the shape validation and mapping.
   async function handleDocumentParsed(data: unknown) {
     setSyncing(true)
     setSyncError('')
