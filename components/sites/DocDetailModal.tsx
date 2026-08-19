@@ -113,7 +113,6 @@ function fmt(bytes: number) {
 export default function DocDetailModal({ doc, siteId, canEdit, onClose, onUpdated }: Props) {
   const [tab, setTab] = useState<'overview' | 'terms' | 'audit'>('overview')
   const [localDoc, setLocalDoc] = useState(doc)
-  const [extracting, setExtracting] = useState(false)
   const [approving, setApproving] = useState(false)
   const [notarizing, setNotarizing] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -134,16 +133,6 @@ export default function DocDetailModal({ doc, siteId, canEdit, onClose, onUpdate
   function update(updated: Doc) {
     setLocalDoc(updated)
     onUpdated(updated)
-  }
-
-  async function extract() {
-    setExtracting(true)
-    setActionError(null)
-    const res = await fetch(`/api/sites/${siteId}/documents/${doc.id}/extract`, { method: 'POST' })
-    const data = await res.json()
-    setExtracting(false)
-    if (res.ok) { update(data); setTab('terms') }
-    else setActionError('Extraction failed: ' + (data.error ?? 'Unknown error'))
   }
 
   async function approve() {
@@ -206,12 +195,12 @@ export default function DocDetailModal({ doc, siteId, canEdit, onClose, onUpdate
 
           {/* Action buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: '16px' }}>
-            {canEdit && !hasTerms && localDoc.doc_status !== 'extracting' && (
-              <button onClick={extract} disabled={extracting} style={btnStyle('#7c3aed')}>
-                {extracting ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={13} />}
-                {extracting ? 'Extracting…' : 'Extract Terms'}
-              </button>
-            )}
+            {/* "Extract Terms" (legacy in-house Anthropic extraction) retired
+                2026-08-19 — SAM 2.0 is the extraction layer now, this
+                per-document button ran a second, redundant pipeline and
+                depended on a separately-billed Anthropic account. See
+                app/api/sites/[id]/documents/[docId]/extract/route.ts, which
+                is disabled server-side too, not just hidden here. */}
             {canEdit && localDoc.doc_status === 'review_required' && (
               <button onClick={approve} disabled={approving} style={btnStyle('#15803d')}>
                 {approving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <ThumbsUp size={13} />}
