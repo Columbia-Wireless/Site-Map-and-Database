@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { X, AlertTriangle, CheckCircle2, Loader2, ClipboardList } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { X, AlertTriangle, CheckCircle2, Loader2, ClipboardList, History, FileWarning, FileCheck2, FileQuestion } from 'lucide-react'
 import Sam2LeaseModule from './Sam2LeaseModule'
 import TermsReviewModal from '../sites/TermsReviewModal'
 
@@ -16,6 +16,24 @@ interface ReviewQueueItem {
   documentId: string
 }
 
+interface ImportLogEntry {
+  id: string
+  occurred_at: string
+  file_name: string
+  outcome: 'synced' | 'needs_review' | 'non_instrument' | 'error'
+  warnings: string[]
+  error_message: string | null
+  actor_name: string
+  tower_sites: { name: string } | null
+}
+
+const OUTCOME_STYLE: Record<ImportLogEntry['outcome'], { color: string; bg: string; label: string; icon: typeof FileCheck2 }> = {
+  synced:        { color: '#15803d', bg: '#dcfce7', label: 'Synced',          icon: FileCheck2 },
+  needs_review:  { color: '#b45309', bg: '#fffbeb', label: 'Needs review',    icon: FileWarning },
+  non_instrument:{ color: '#475569', bg: '#f1f5f9', label: 'Filed (no lease)', icon: FileQuestion },
+  error:         { color: '#b91c1c', bg: '#fef2f2', label: 'Failed',          icon: FileWarning },
+}
+
 export default function Sam2ImportModal({ onClose, onSynced }: Props) {
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState('')
@@ -28,6 +46,23 @@ export default function Sam2ImportModal({ onClose, onSynced }: Props) {
   const [reviewQueue, setReviewQueue] = useState<ReviewQueueItem[]>([])
   const [activeReview, setActiveReview] = useState<{ siteId: string; doc: any } | null>(null)
   const [loadingReview, setLoadingReview] = useState(false)
+  // Persistent history — every sync attempt is logged server-side (see
+  // supabase/sam2_import_log.sql), so this survives closing the modal, unlike
+  // syncedCount/warnings above which are just this session's tally.
+  const [recentImports, setRecentImports] = useState<ImportLogEntry[]>([])
+  const [showHistory, setShowHistory] = useState(false)
+
+  const refreshHistory = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sam2/import-log?limit=25')
+      const data = await res.json()
+      setRecentImports(data.entries ?? [])
+    } catch {
+      // Best-effort — history panel just stays empty/stale, not worth surfacing an error for.
+    }
+  }, [])
+
+  useEffect(() => { refreshHistory() }, [refreshHistory])
 
   // Payload shape confirmed 2026-08-18 — see lib/sam2Types.ts's module comment.
   // This POSTs whatever the event actually contains, untouched; /api/sam2/sync
@@ -56,6 +91,7 @@ export default function Sam2ImportModal({ onClose, onSynced }: Props) {
       setSyncError(err?.message ?? 'Sync failed')
     } finally {
       setSyncing(false)
+      refreshHistory() // every attempt (success or failure) is logged server-side — pick it up
     }
   }
 
@@ -106,15 +142,68 @@ export default function Sam2ImportModal({ onClose, onSynced }: Props) {
               Upload leases in any order — SAM 2.0 sequences the timeline and calculates current rent automatically
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
-          >
-            <X size={20} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <button
+              onClick={() => setShowHistory(v => !v)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px', background: showHistory ? '#eff6ff' : 'none',
+                border: '1px solid ' + (showHistory ? '#bfdbfe' : '#e2e8f0'), borderRadius: '6px', padding: '6px 12px',
+                fontSize: '12px', fontWeight: 600, color: showHistory ? '#1e40af' : '#64748b', cursor: 'pointer',
+              }}
+            >
+              <History size={13} /> Recent Imports {recentImports.length > 0 ? `(${recentImports.length})` : ''}
+            </button>
+            <button
+              onClick={onClose}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
-        <div style={{ padding: '20px 24px 24px', overflow: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
+        {showHistory && (
+          <div style={{ width: '340px', flexShrink: 0, borderRight: '1px solid #f1f5f9', overflow: 'auto', padding: '16px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', marginBottom: '10px', letterSpacing: '0.03em' }}>
+              RECENT SAM 2.0 IMPORTS
+            </div>
+            {recentImports.length === 0 && (
+              <div style={{ fontSize: '12px', color: '#94a3b8' }}>No import history yet.</div>
+            )}
+            {recentImports.map(entry => {
+              const style = OUTCOME_STYLE[entry.outcome]
+              const Icon = style.icon
+              return (
+                <div key={entry.id} style={{ padding: '10px 0', borderBottom: '1px solid #f8fafc' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                    <Icon size={14} color={style.color} style={{ flexShrink: 0, marginTop: '2px' }} />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', wordBreak: 'break-word' }}>
+                        {entry.file_name}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: style.color, background: style.bg, borderRadius: '8px', padding: '1px 7px' }}>
+                          {style.label}
+                        </span>
+                        {entry.tower_sites?.name && (
+                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>{entry.tower_sites.name}</span>
+                        )}
+                      </div>
+                      {entry.error_message && (
+                        <div style={{ fontSize: '11px', color: '#b91c1c', marginTop: '3px' }}>{entry.error_message}</div>
+                      )}
+                      <div style={{ fontSize: '10px', color: '#cbd5e1', marginTop: '3px' }}>
+                        {new Date(entry.occurred_at).toLocaleString()} · {entry.actor_name}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <div style={{ padding: '20px 24px 24px', overflow: 'auto', flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           {syncError && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: '8px', background: '#fef2f2',
@@ -168,6 +257,7 @@ export default function Sam2ImportModal({ onClose, onSynced }: Props) {
           <div style={{ flex: 1, minHeight: 0 }}>
             <Sam2LeaseModule height="100%" onDocumentParsed={handleDocumentParsed} />
           </div>
+        </div>
         </div>
       </div>
 

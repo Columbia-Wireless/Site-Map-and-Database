@@ -31,6 +31,35 @@ const DOC_TYPE_MAP: Record<Sam2DocType, string> = {
   management_agreement: 'other',
 }
 
+/**
+ * One row per sync attempt, for the "Recent SAM 2.0 Imports" panel — see
+ * supabase/sam2_import_log.sql. Deliberately swallows its own errors: a
+ * missing table (migration not yet run) or a logging failure must never turn
+ * an otherwise-successful sync into a reported failure, and must never mask
+ * the real error on a failed one.
+ */
+async function logImportAttempt(
+  supabase: ReturnType<typeof getSupabase>,
+  row: {
+    organization_id: string | null
+    file_name: string
+    site_id: string | null
+    document_id: string | null
+    outcome: 'synced' | 'needs_review' | 'non_instrument' | 'error'
+    warnings: string[]
+    error_message?: string
+    actor_name: string
+    actor_id: string | null
+  }
+) {
+  try {
+    const { error } = await supabase.from('sam2_import_log').insert([row])
+    if (error) console.error('[sam2/sync] import log write failed (non-fatal):', error.message)
+  } catch (err) {
+    console.error('[sam2/sync] import log write failed (non-fatal):', err)
+  }
+}
+
 function computeAnnualRent(leaseTerms: Sam2LeaseTerms | undefined): number {
   if (!leaseTerms) return 0
   const multiplier = { monthly: 12, quarterly: 4, annually: 1 }[leaseTerms.paymentFrequency] ?? 1
@@ -405,9 +434,32 @@ export async function POST(req: NextRequest) {
       warnings,
       needsReview: docStatus === 'review_required',
     }
+
+    await logImportAttempt(supabase, {
+      organization_id: profile.organization_id,
+      file_name: payload.fileName,
+      site_id: siteId,
+      document_id: documentId,
+      outcome: isNonInstrument ? 'non_instrument' : (docStatus === 'review_required' ? 'needs_review' : 'synced'),
+      warnings,
+      actor_name: actor.name,
+      actor_id: actor.userId,
+    })
+
     return NextResponse.json(result)
   } catch (err: any) {
     console.error('[sam2/sync] failed:', err?.message ?? err)
+    await logImportAttempt(supabase, {
+      organization_id: profile.organization_id,
+      file_name: payload?.fileName ?? 'unknown',
+      site_id: null,
+      document_id: null,
+      outcome: 'error',
+      warnings: [],
+      error_message: err?.message ?? 'Sync failed',
+      actor_name: actor.name,
+      actor_id: actor.userId,
+    })
     return NextResponse.json({ error: err?.message ?? 'Sync failed' }, { status: 500 })
   }
 }
