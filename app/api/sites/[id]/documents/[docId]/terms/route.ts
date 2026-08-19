@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { logDocEvent, getCallerName } from '@/lib/logDocEvent'
 import { assertSiteVisible } from '@/lib/orgScope'
+import { sendCorrectionToSam2, FIELD_TO_SAM2_PATH } from '@/lib/sam2Corrections'
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vfntpdpneusqgcwxwkix.supabase.co'
@@ -101,6 +102,8 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
+  let sam2CorrectionResult: Awaited<ReturnType<typeof sendCorrectionToSam2>> | null = null
+
   // Log field edit (skip internal _address_check updates)
   if (!field.startsWith('_')) {
     const oldRaw = currentDoc?.extracted_terms?.[field]
@@ -111,9 +114,30 @@ export async function PATCH(
       old_value: oldVal ?? null,
       new_value: newVal,
     })
+
+    // Write the correction back to SAM 2.0 — task #43, endpoint confirmed
+    // live by Onno 2026-08-19. Only for fields we also know how to patch
+    // locally (FIELD_TO_SAM2_PATH mirrors applyCorrectionToSam2Raw's switch
+    // above) and only for documents that actually came from SAM 2.0
+    // (raw.documentId/siteId/agreementId present). No-ops safely if
+    // SAM2_CORRECTION_SECRET isn't set yet — see lib/sam2Corrections.ts.
+    const sam2Path = FIELD_TO_SAM2_PATH[field]
+    const raw = all_terms?.['_sam2_raw']
+    if (sam2Path && raw?.documentId && raw?.siteId && raw?.agreementId) {
+      sam2CorrectionResult = await sendCorrectionToSam2({
+        documentId: raw.documentId,
+        siteId: raw.siteId,
+        agreementId: raw.agreementId,
+        fieldPath: sam2Path,
+        oldValue: oldVal ?? null,
+        newValue: newVal,
+        correctedBy: userName,
+        correctedAt: new Date().toISOString(),
+      })
+    }
   }
 
-  return NextResponse.json(updated)
+  return NextResponse.json({ ...updated, _sam2CorrectionResult: sam2CorrectionResult })
 }
 
 function computeDocStatus(terms: Record<string, any>): string {
