@@ -338,12 +338,17 @@ export async function POST(req: NextRequest) {
           insurance_liability: ed.insuranceRequirements
             ? { value: ed.insuranceRequirements.requiresAdditionalInsured ? 'Additional insured required' : 'Additional insured not required', confidence: 'high' }
             : undefined,
-          // legalTerms (premises_description, governing_law, permitted_use,
-          // assignment_allowed, termination_notice_days, relocation_provisions,
-          // equipment_description, notes) intentionally NOT mapped yet — Onno
-          // added this block 2026-08-20 but our confirmed field names/types
-          // haven't come back yet (see lib/sam2Types.ts). Once confirmed, add
-          // mappings here rather than guessing at ed.legalTerms's keys.
+          // legalTerms — shape confirmed by Onno 2026-08-20 (src/types/lease.ts).
+          // terminationNoticeDays is in days, unlike renewalOptions.noticePeriodMonths
+          // (months) — kept as separate fields, not merged.
+          premises_description: ed.legalTerms?.premisesDescription ? { value: ed.legalTerms.premisesDescription, confidence: 'high' } : undefined,
+          governing_law: ed.legalTerms?.governingLaw ? { value: ed.legalTerms.governingLaw, confidence: 'high' } : undefined,
+          permitted_use: ed.legalTerms?.permittedUse ? { value: ed.legalTerms.permittedUse, confidence: 'high' } : undefined,
+          assignment_allowed: ed.legalTerms?.assignmentAllowed ? { value: ed.legalTerms.assignmentAllowed, confidence: 'high' } : undefined,
+          termination_notice_days: ed.legalTerms?.terminationNoticeDays != null ? { value: `${ed.legalTerms.terminationNoticeDays} days`, confidence: 'high' } : undefined,
+          relocation_provisions: ed.legalTerms?.relocationProvisions ? { value: ed.legalTerms.relocationProvisions, confidence: 'high' } : undefined,
+          equipment_description: ed.legalTerms?.equipmentDescription ? { value: ed.legalTerms.equipmentDescription, confidence: 'high' } : undefined,
+          notes: ed.legalTerms?.notes ? { value: ed.legalTerms.notes, confidence: 'high' } : undefined,
           ...(flagsNote ? { sam2_validation_flags: { value: flagsNote, confidence: 'medium' } } : {}),
           // Full SAM 2.0 payload kept verbatim for anything the flat fields above can't
           // represent — amendment deltas, classification, lineage, validation flags, etc.

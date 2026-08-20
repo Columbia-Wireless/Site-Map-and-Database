@@ -232,13 +232,22 @@ export interface Sam2ExtractedData {
   /** Confirmed present in the payload 2026-08-20 (Onno). Absent when the lease
    *  doesn't state insurance requirements. */
   insuranceRequirements?: Sam2InsuranceRequirements
-  /** NEW as of 2026-08-20 (Onno) — premises description, governing law, permitted
-   *  use, assignment allowed, termination notice period, relocation provisions,
-   *  equipment description, and a catch-all notes field. Exact field names/types
-   *  not yet confirmed against source (our SAM 2.0 checkout predates this addition)
-   *  — left untyped and unmapped in sync/route.ts until Onno sends the TS shape,
-   *  same as every other field in this file. Do not guess field names here. */
-  legalTerms?: Record<string, unknown>
+  /** NEW as of 2026-08-20. Shape confirmed by Onno directly from src/types/lease.ts.
+   *  Note terminationNoticeDays is in DAYS, unlike renewalOptions.noticePeriodMonths
+   *  which is in months — different unit on purpose, don't conflate them. */
+  legalTerms?: Sam2LegalTerms
+}
+
+export interface Sam2LegalTerms {
+  premisesDescription?: string
+  governingLaw?: string
+  permittedUse?: string
+  assignmentAllowed?: 'yes' | 'no' | 'conditional'
+  /** Days, not months — distinct from leaseTerms.renewalOptions.noticePeriodMonths. */
+  terminationNoticeDays?: number
+  relocationProvisions?: string
+  equipmentDescription?: string
+  notes?: string
 }
 
 // ── The actual wire envelope ─────────────────────────────────────────────────
