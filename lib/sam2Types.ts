@@ -101,6 +101,30 @@ export interface Sam2DocumentMetadata {
   commencementDate?: string
 }
 
+// ── Utilities / holdover / insurance (confirmed against SAM 2.0 repo source,
+// src/types/lease.ts, 2026-08-20 — top-level siblings of siteIdentity/leaseTerms
+// on extractedData, not nested under leaseTerms) ────────────────────────────
+
+export type Sam2UtilityBillingType = string // loose — mirrors SAM 2.0's own UtilityBillingType union, kept loose here since we only display it
+
+export interface Sam2UtilitiesInfo {
+  billingType: Sam2UtilityBillingType
+  baseMonthlyAmount?: number
+  powerLimitKw?: number
+  meterInstallationResponsibility?: 'lessor' | 'lessee'
+}
+
+export interface Sam2HoldoverInfo {
+  multiplier: number
+  maxHoldoverDays?: number
+}
+
+export interface Sam2InsuranceRequirements {
+  generalLiabilityLimit: number
+  aggregateLimit: number
+  requiresAdditionalInsured: boolean
+}
+
 // ── Classification (execution status, instrument role) ──────────────────────
 
 export type Sam2InstrumentRole =
@@ -199,6 +223,22 @@ export interface Sam2ExtractedData {
   /** Present on amendment-family instruments instead of a full leaseTerms snapshot. */
   delta?: Sam2AmendmentDelta
   classification?: Sam2DocumentClassification
+  /** Confirmed present in the payload 2026-08-20 (Onno) — top-level, not nested
+   *  under leaseTerms. Absent when the lease doesn't state utility terms. */
+  utilities?: Sam2UtilitiesInfo
+  /** Confirmed present in the payload 2026-08-20 (Onno). Absent when the lease
+   *  doesn't state a holdover clause. */
+  holdover?: Sam2HoldoverInfo
+  /** Confirmed present in the payload 2026-08-20 (Onno). Absent when the lease
+   *  doesn't state insurance requirements. */
+  insuranceRequirements?: Sam2InsuranceRequirements
+  /** NEW as of 2026-08-20 (Onno) — premises description, governing law, permitted
+   *  use, assignment allowed, termination notice period, relocation provisions,
+   *  equipment description, and a catch-all notes field. Exact field names/types
+   *  not yet confirmed against source (our SAM 2.0 checkout predates this addition)
+   *  — left untyped and unmapped in sync/route.ts until Onno sends the TS shape,
+   *  same as every other field in this file. Do not guess field names here. */
+  legalTerms?: Record<string, unknown>
 }
 
 // ── The actual wire envelope ─────────────────────────────────────────────────

@@ -287,6 +287,8 @@ export async function POST(req: NextRequest) {
       : {
           licensor: { value: ed.siteIdentity.lessorName, confidence: 'high' },
           licensee: { value: ed.siteIdentity.lesseeName, confidence: 'high' },
+          site_id: ed.siteIdentity.siteCode ? { value: ed.siteIdentity.siteCode, confidence: 'high' } : undefined,
+          premises_address: { value: ed.siteIdentity.rawAddress, confidence: 'high' },
           signature_date: { value: ed.documentMetadata.executionDate, confidence: 'high' },
           commencement_date: { value: ed.documentMetadata.commencementDate ?? null, confidence: ed.documentMetadata.commencementDate ? 'high' : 'low' },
           monthly_rent: ed.leaseTerms ? { value: ed.leaseTerms.baseRent, confidence: 'high' } : undefined,
@@ -310,6 +312,38 @@ export async function POST(req: NextRequest) {
                 confidence: 'high',
               }
             : undefined,
+          holdover_provisions: ed.holdover
+            ? {
+                value: `${ed.holdover.multiplier}x rent${ed.holdover.maxHoldoverDays != null ? `, max ${ed.holdover.maxHoldoverDays} days` : ''}`,
+                confidence: 'high',
+              }
+            : undefined,
+          utilities: ed.utilities
+            ? {
+                value: [
+                  ed.utilities.billingType,
+                  ed.utilities.baseMonthlyAmount != null ? `$${ed.utilities.baseMonthlyAmount}/mo base` : null,
+                  ed.utilities.powerLimitKw != null ? `${ed.utilities.powerLimitKw}kW limit` : null,
+                  ed.utilities.meterInstallationResponsibility ? `meter: ${ed.utilities.meterInstallationResponsibility}` : null,
+                ].filter(Boolean).join(' · '),
+                confidence: 'high',
+              }
+            : undefined,
+          insurance_per_occurrence: ed.insuranceRequirements
+            ? { value: `$${ed.insuranceRequirements.generalLiabilityLimit.toLocaleString()}`, confidence: 'high' }
+            : undefined,
+          insurance_aggregate: ed.insuranceRequirements
+            ? { value: `$${ed.insuranceRequirements.aggregateLimit.toLocaleString()}`, confidence: 'high' }
+            : undefined,
+          insurance_liability: ed.insuranceRequirements
+            ? { value: ed.insuranceRequirements.requiresAdditionalInsured ? 'Additional insured required' : 'Additional insured not required', confidence: 'high' }
+            : undefined,
+          // legalTerms (premises_description, governing_law, permitted_use,
+          // assignment_allowed, termination_notice_days, relocation_provisions,
+          // equipment_description, notes) intentionally NOT mapped yet — Onno
+          // added this block 2026-08-20 but our confirmed field names/types
+          // haven't come back yet (see lib/sam2Types.ts). Once confirmed, add
+          // mappings here rather than guessing at ed.legalTerms's keys.
           ...(flagsNote ? { sam2_validation_flags: { value: flagsNote, confidence: 'medium' } } : {}),
           // Full SAM 2.0 payload kept verbatim for anything the flat fields above can't
           // represent — amendment deltas, classification, lineage, validation flags, etc.

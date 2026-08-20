@@ -57,6 +57,10 @@ Sam2SyncPayload {
     }
     classification?: { role, nonInstrumentKind?, executionStatus, executionEvidence[], signatures[] }
     delta?: { changes[], ratifiesRemainder, recitedCurrentRent?, amendsReference? }
+    utilities?: { billingType, baseMonthlyAmount?, powerLimitKw?, meterInstallationResponsibility?: 'lessor'|'lessee' }
+    holdover?: { multiplier: number, maxHoldoverDays? }
+    insuranceRequirements?: { generalLiabilityLimit: number, aggregateLimit: number, requiresAdditionalInsured: boolean }
+    legalTerms?: { /* NEW 2026-08-20, exact field names not yet confirmed against source — see note below */ }
   }
   lineage: { ordinal, fileNameOrdinalHint, amendsDocId, supersedesDocId, supersededByDocId,
              duplicateOfDocId, terminatesDocId } | null
@@ -73,6 +77,7 @@ Things worth calling out explicitly since they weren't obvious from the field na
 - `lineage` is `null` until SAM 2.0's cross-document lineage pass resolves it, not the same as "resolved, no relationship." SAM 2.0 re-announces `SAM2_DOCUMENT_PARSED` (same `documentId`) when lineage changes, so treat incoming events as an upsert keyed on `documentId`, not a one-shot creation event. Our sync route is idempotent this way already.
 - `classification.role` of `non_instrument` or `exhibit` marks documents that aren't lease instruments (tax forms, insurance certs, correspondence, etc.) — see "Non-instrument documents" below.
 - CPI escalation (`type: 'cpi'`) is now fully supported on our side, see "CPI escalation" below — no longer flattened away.
+- **2026-08-20 field parity update.** We compared the legacy in-house extractor's field list against this payload and sent Onno a gap list (`utilities`/`holdover`/`insuranceRequirements` turned out to already exist, just undocumented here — now added above and wired into `extracted_terms` as `utilities`/`holdover_provisions`/`insurance_per_occurrence`/`insurance_aggregate`/`insurance_liability`). Onno also shipped a brand-new `legalTerms` block the same day (premises description, governing law, permitted use, assignment allowed, termination notice days, relocation provisions, equipment description, catch-all notes) — **not yet wired into our sync route**, because our local SAM 2.0 checkout predates it and we don't have the confirmed field names/types. Waiting on Onno's exact TS shape before mapping it (same "never guess a field path" rule as everything else here). Forward-only: documents already filed before this change keep their old extraction, no bulk reprocessing tool exists yet.
 
 ### What we do with it
 
