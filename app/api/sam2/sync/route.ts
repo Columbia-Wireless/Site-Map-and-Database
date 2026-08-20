@@ -122,6 +122,19 @@ export async function POST(req: NextRequest) {
   // on the way in either.
   const isNonInstrument = ed.classification?.role === 'non_instrument' || ed.classification?.role === 'exhibit'
 
+  // Between the site owner and Columbia Wireless itself (management, not a
+  // carrier lease) — client-confirmed 2026-08-20. Fixed 2026-08-20: this used
+  // to fall through the normal lease path, which read siteIdentity.lesseeName
+  // (the manager, i.e. Columbia Wireless) as if it were a carrier and created
+  // a phantom licensee + a $0 site_licenses row for every one of these. Same
+  // "don't touch host_agency_id from this document" rule as non-instrument —
+  // per the client's 2026-08-04 confirmation (lib/rentEngine/types/lease.ts's
+  // TowerSite.lessorName doc comment), ownership resolution never trusts a
+  // management agreement's stated owner name, only a real lease. Field
+  // definition (commission, billing practices, term start/end) still open —
+  // see docs/SAM2_INTEGRATION.md "Management agreements" section.
+  const isManagementAgreement = ed.classification?.role === 'management_agreement'
+
   try {
     // ── 1. Resolve or create the site ──────────────────────────────────────
     const { data: existingSite } = await supabase
@@ -133,20 +146,28 @@ export async function POST(req: NextRequest) {
     let siteId: string
     let hostAgencyResult = { matched: false, confidence: 'none', id: null as string | null, suggestedName: null as string | null }
 
-    if (existingSite && isNonInstrument) {
-      // Supporting paperwork for a site that already exists — attach the
-      // document, don't touch the site record. Its siteIdentity fields
-      // aren't reliable lease data and shouldn't overwrite what a real
-      // lease document already set (owner, tower type, address).
+    if (existingSite && (isNonInstrument || isManagementAgreement)) {
+      // Supporting paperwork (or a management agreement) for a site that
+      // already exists — attach the document, don't touch the site record.
+      // Its siteIdentity fields aren't reliable lease data and shouldn't
+      // overwrite what a real lease document already set (owner, tower
+      // type, address).
       siteId = existingSite.id
-    } else if (isNonInstrument) {
+    } else if (isNonInstrument || isManagementAgreement) {
       // First document filed for this site happens to be non-lease paperwork
-      // (e.g. arrived out of order in a batch upload). Create a minimal site
-      // shell so the document has somewhere to attach — no owner match
-      // attempted, tower type left at the same forced default a real lease
-      // document would get, both flagged for completion once a base lease
-      // is filed.
-      warnings.push(`This site was created from a non-instrument document (${ed.classification?.nonInstrumentKind ?? ed.classification?.role}), not a lease. Owner and tower type need manual entry once a base lease is filed.`)
+      // or a management agreement (e.g. arrived out of order in a batch
+      // upload, or Columbia Wireless was engaged before a base lease was
+      // filed). Create a minimal site shell so the document has somewhere to
+      // attach — no owner match attempted (a management agreement's stated
+      // owner is never trusted for site ownership resolution, same as any
+      // other non-instrument document — client-confirmed 2026-08-04), tower
+      // type left at the same forced default a real lease document would
+      // get, both flagged for completion once a base lease is filed.
+      warnings.push(
+        isManagementAgreement
+          ? 'This site was created from a management agreement, not a carrier lease. Owner and tower type need manual entry once a base lease is filed.'
+          : `This site was created from a non-instrument document (${ed.classification?.nonInstrumentKind ?? ed.classification?.role}), not a lease. Owner and tower type need manual entry once a base lease is filed.`
+      )
       const { data: inserted, error } = await supabase
         .from('tower_sites')
         .insert([{
@@ -169,7 +190,7 @@ export async function POST(req: NextRequest) {
         .single()
       if (error) throw new Error(`tower_sites insert failed: ${error.message}`)
       siteId = inserted.id
-      await logChange(supabase, siteId, 'site_created', null, `${ed.siteIdentity.siteName || ed.siteIdentity.rawAddress || 'Unnamed site'} (via SAM 2.0, non-instrument document)`, actor.name, {
+      await logChange(supabase, siteId, 'site_created', null, `${ed.siteIdentity.siteName || ed.siteIdentity.rawAddress || 'Unnamed site'} (via SAM 2.0, ${isManagementAgreement ? 'management agreement' : 'non-instrument document'})`, actor.name, {
         userId: actor.userId, ip: actor.ip, entityType: 'site',
       })
     } else {
@@ -233,13 +254,15 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 2. Resolve or create the licensee ──────────────────────────────────
-    // Skipped entirely for non-instrument documents — see the module note
-    // above. A tax form doesn't name a real lessee, so there's nothing to
-    // match or create a licensee record from.
+    // Skipped entirely for non-instrument documents and management agreements
+    // — see the module note above. A tax form doesn't name a real lessee, and
+    // a management agreement's "lesseeName" is Columbia Wireless itself (the
+    // manager), not a carrier — treating it as one used to create a phantom
+    // licensee record for every management agreement synced.
     let licenseeId: string | null = null
     let licenseeCreated = false
     let lesseeMatchConfidence = 'none'
-    if (!isNonInstrument) {
+    if (!isNonInstrument && !isManagementAgreement) {
       const lesseeMatch = await matchLicensee(supabase, ed.siteIdentity.lesseeName)
       lesseeMatchConfidence = lesseeMatch.confidence
       if (lesseeMatch.confidence === 'exact' || lesseeMatch.confidence === 'high') {
@@ -274,13 +297,31 @@ export async function POST(req: NextRequest) {
       ? payload.validationFlags.map(f => `[${f.severity}] ${f.message}`).join('\n')
       : null
 
-    const { rate: previewEscalationRate } = isNonInstrument ? { rate: 0 } : simplifyEscalationRate(ed.leaseTerms)
+    const { rate: previewEscalationRate } = (isNonInstrument || isManagementAgreement) ? { rate: 0 } : simplifyEscalationRate(ed.leaseTerms)
 
     const extractedTerms: Record<string, unknown> = isNonInstrument
       ? {
           // No licensor/licensee/rent fields — this document never named real
           // lease parties, storing them here would misrepresent them as facts.
           document_category: { value: ed.classification?.nonInstrumentKind ?? ed.classification?.role ?? 'non_instrument', confidence: 'high' },
+          ...(flagsNote ? { sam2_validation_flags: { value: flagsNote, confidence: 'medium' } } : {}),
+          _sam2_raw: payload,
+        }
+      : isManagementAgreement
+      ? {
+          // Site owner ↔ Columbia Wireless, not a carrier lease — no
+          // licensor/licensee/monthly_rent fields (those imply a carrier).
+          // Field list intentionally minimal for now: commission, billing
+          // practices, and term end date aren't in SAM 2.0's payload yet —
+          // see docs/SAM2_INTEGRATION.md "Management agreements".
+          document_category: { value: 'management_agreement', confidence: 'high' },
+          site_owner: { value: ed.siteIdentity.lessorName, confidence: 'high' },
+          manager_entity: { value: ed.siteIdentity.lesseeName, confidence: 'high' },
+          signature_date: { value: ed.documentMetadata.executionDate, confidence: 'high' },
+          commencement_date: ed.documentMetadata.commencementDate ? { value: ed.documentMetadata.commencementDate, confidence: 'high' } : undefined,
+          governing_law: ed.legalTerms?.governingLaw ? { value: ed.legalTerms.governingLaw, confidence: 'high' } : undefined,
+          termination_notice_days: ed.legalTerms?.terminationNoticeDays != null ? { value: `${ed.legalTerms.terminationNoticeDays} days`, confidence: 'high' } : undefined,
+          notes: ed.legalTerms?.notes ? { value: ed.legalTerms.notes, confidence: 'high' } : undefined,
           ...(flagsNote ? { sam2_validation_flags: { value: flagsNote, confidence: 'medium' } } : {}),
           _sam2_raw: payload,
         }
@@ -409,7 +450,7 @@ export async function POST(req: NextRequest) {
     // the right agreement manually if it needs to be, same as any other
     // supporting paperwork.
     let licenseId: string | null = null
-    if (!isNonInstrument) {
+    if (!isNonInstrument && !isManagementAgreement) {
       const { rate: escalationRate, warning: escalationWarning } = simplifyEscalationRate(ed.leaseTerms)
       if (escalationWarning) warnings.push(escalationWarning)
 
@@ -461,7 +502,11 @@ export async function POST(req: NextRequest) {
         .eq('id', documentId)
       if (linkError) warnings.push(`Document synced but could not be linked to its agreement: ${linkError.message}`)
     } else {
-      warnings.push('Non-instrument document — stored and attached to the site, not linked to any license.')
+      warnings.push(
+        isManagementAgreement
+          ? 'Management agreement — stored and attached to the site, not linked to any carrier license.'
+          : 'Non-instrument document — stored and attached to the site, not linked to any license.'
+      )
     }
 
     const result: Sam2SyncResult = {
