@@ -14,12 +14,14 @@
 -- One agreement can cover one site or several (client-confirmed 2026-08-20),
 -- hence the join table rather than a single site_id column.
 --
--- Field shapes (commission_type enum, billing_practices structure, how SAM
--- 2.0 represents multi-site coverage on the wire) are still pending Onno's
--- reply as of 2026-08-20 — this table is deliberately loose (nullable, free
--- text) so it can receive whatever comes back without a second migration.
--- The sync-route mapping into this table is NOT built yet; this is schema
--- only.
+-- Field shapes confirmed by Onno 2026-08-20 (managementTerms block, live on
+-- his side). Multi-site question answered too: SAM 2.0 never files a
+-- management agreement against more than one site today — a document that
+-- names multiple properties stays stuck in his review inbox for a person to
+-- sort out manually (same behavior a portfolio-wide lease already gets), so
+-- we will only ever receive single-site payloads here despite the join
+-- table below. coversMultipleSites is his early-warning flag for that case,
+-- stored but not expected to ever be true in a payload we actually get.
 
 create table if not exists management_agreements (
   id uuid primary key default gen_random_uuid(),
@@ -40,22 +42,38 @@ create table if not exists management_agreements (
   site_owner_name text,
   manager_entity_name text,
 
-  -- Commission: percentage as a fraction (0.20 = 20%) and/or a flat fee — a
-  -- document may state either, both, or neither. commission_type is left as
-  -- free text (not a check constraint) until Onno confirms the real enum.
-  commission_type text,
+  -- commission_rate is a fraction (0.20 = 20%), matches Onno's
+  -- commissionPercentage exactly. IMPORTANT: this is what the document
+  -- states, extracted for display/cross-check only. It is never
+  -- auto-applied as the operational commission rate — that's a separate,
+  -- manually-confirmed number the rent engine actually uses (Onno's
+  -- explicit warning, 2026-08-20). Nothing in the sync route writes this
+  -- column into any calculation input.
+  commission_type text check (commission_type in ('percentage', 'flat_fee', 'hybrid', 'other')),
   commission_rate numeric,
   flat_fee_amount numeric,
+  -- Always populated for hybrid/other per Onno's spec; free text for the
+  -- rest of the commission structure that doesn't fit rate/flat_fee_amount.
+  commission_description text,
 
   billing_practices text,
   start_date date,
+  -- Only set when the document explicitly states an end date — never
+  -- computed from term length (Onno caught and fixed this exact bug before
+  -- shipping: end date was being calculated, not read, on his first pass).
   end_date date,
+  -- Fallback when there's no explicit end_date, e.g. "five years".
+  initial_term_description text,
+  renewal_terms text,
   termination_notice_days integer,
 
-  -- Free text until Onno confirms whether this comes back as an enum
-  -- ('exclusive'/'non_exclusive'/'conditional', mirroring legalTerms.
-  -- assignmentAllowed's shape) or something else.
-  exclusivity text,
+  exclusivity text check (exclusivity in ('exclusive', 'non_exclusive')),
+
+  -- Onno's model always sets this (never null), defaulting to true when
+  -- genuinely unclear. In practice we should never see true here, since a
+  -- multi-site document never reaches us as a payload at all (see header
+  -- comment) — kept for completeness / future-proofing, not actively used.
+  covers_multiple_sites boolean not null default false,
 
   governing_law text,
   notes text,

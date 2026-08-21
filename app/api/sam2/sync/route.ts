@@ -311,16 +311,34 @@ export async function POST(req: NextRequest) {
       ? {
           // Site owner ↔ Columbia Wireless, not a carrier lease — no
           // licensor/licensee/monthly_rent fields (those imply a carrier).
-          // Field list intentionally minimal for now: commission, billing
-          // practices, and term end date aren't in SAM 2.0's payload yet —
-          // see docs/SAM2_INTEGRATION.md "Management agreements".
+          // managementTerms shape confirmed by Onno 2026-08-20 — see
+          // lib/sam2Types.ts and docs/SAM2_INTEGRATION.md "Management agreements".
           document_category: { value: 'management_agreement', confidence: 'high' },
           site_owner: { value: ed.siteIdentity.lessorName, confidence: 'high' },
           manager_entity: { value: ed.siteIdentity.lesseeName, confidence: 'high' },
           signature_date: { value: ed.documentMetadata.executionDate, confidence: 'high' },
           commencement_date: ed.documentMetadata.commencementDate ? { value: ed.documentMetadata.commencementDate, confidence: 'high' } : undefined,
           governing_law: ed.legalTerms?.governingLaw ? { value: ed.legalTerms.governingLaw, confidence: 'high' } : undefined,
-          termination_notice_days: ed.legalTerms?.terminationNoticeDays != null ? { value: `${ed.legalTerms.terminationNoticeDays} days`, confidence: 'high' } : undefined,
+          termination_notice_days: ed.managementTerms?.terminationNoticeDays != null
+            ? { value: `${ed.managementTerms.terminationNoticeDays} days`, confidence: 'high' }
+            : ed.legalTerms?.terminationNoticeDays != null ? { value: `${ed.legalTerms.terminationNoticeDays} days`, confidence: 'high' } : undefined,
+          management_commission: ed.managementTerms
+            ? {
+                value: ed.managementTerms.commissionStructure === 'percentage' && ed.managementTerms.commissionPercentage != null
+                  ? `${(ed.managementTerms.commissionPercentage * 100).toFixed(1)}%`
+                  : ed.managementTerms.commissionStructure === 'flat_fee' && ed.managementTerms.commissionFlatFeeAmount != null
+                  ? `$${ed.managementTerms.commissionFlatFeeAmount.toLocaleString()} flat`
+                  : ed.managementTerms.commissionDescription ?? '',
+                confidence: 'high',
+                note: 'As stated in the document — not the operational commission rate used for billing, which is confirmed separately.',
+              }
+            : undefined,
+          billing_practices: ed.managementTerms?.billingPractices ? { value: ed.managementTerms.billingPractices, confidence: 'high' } : undefined,
+          exclusivity: ed.managementTerms?.exclusivity ? { value: ed.managementTerms.exclusivity, confidence: 'high' } : undefined,
+          term_end_date: ed.managementTerms?.termEndDate
+            ? { value: ed.managementTerms.termEndDate, confidence: 'high' }
+            : ed.managementTerms?.initialTermDescription ? { value: ed.managementTerms.initialTermDescription, confidence: 'medium', note: 'No explicit end date stated — this is the term description as written.' } : undefined,
+          renewal_terms: ed.managementTerms?.renewalTerms ? { value: ed.managementTerms.renewalTerms, confidence: 'high' } : undefined,
           notes: ed.legalTerms?.notes ? { value: ed.legalTerms.notes, confidence: 'high' } : undefined,
           ...(flagsNote ? { sam2_validation_flags: { value: flagsNote, confidence: 'medium' } } : {}),
           _sam2_raw: payload,
@@ -441,6 +459,79 @@ export async function POST(req: NextRequest) {
         .single()
       if (error) throw new Error(`site_documents insert failed: ${error.message}`)
       documentId = inserted.id
+    }
+
+    // ── Upsert management agreement terms, if applicable ────────────────────
+    // Management agreements never get a site_licenses row (see isManagementAgreement
+    // above) — this is where their real data actually lands. Wrapped in try/catch
+    // and made non-fatal: management_agreements/management_agreement_sites
+    // (supabase/management_agreements.sql) may not be applied to the live database
+    // yet when this code deploys — a missing table must not break the underlying
+    // document sync, which has already succeeded by this point.
+    if (isManagementAgreement) {
+      try {
+        const mt = ed.managementTerms
+        const ownerMatch = await matchHostAgency(supabase, ed.siteIdentity.lessorName)
+        const agreementRow = {
+          organization_id: profile.organization_id,
+          sam2_agreement_id: payload.agreementId,
+          document_id: documentId,
+          // Informational only — never used to set tower_sites.host_agency_id.
+          host_agency_id: ownerMatch.confidence === 'exact' || ownerMatch.confidence === 'high' ? ownerMatch.id : null,
+          site_owner_name: ed.siteIdentity.lessorName,
+          manager_entity_name: ed.siteIdentity.lesseeName,
+          commission_type: mt?.commissionStructure ?? null,
+          // Fraction, matches Onno's commissionPercentage exactly. Display/
+          // cross-check only — never the operational rate the rent engine uses.
+          commission_rate: mt?.commissionPercentage ?? null,
+          flat_fee_amount: mt?.commissionFlatFeeAmount ?? null,
+          commission_description: mt?.commissionDescription ?? null,
+          billing_practices: mt?.billingPractices ?? null,
+          start_date: ed.documentMetadata.effectiveDate || ed.documentMetadata.commencementDate || null,
+          // Only set when explicitly stated — never computed from term length.
+          end_date: mt?.termEndDate ?? null,
+          initial_term_description: mt?.initialTermDescription ?? null,
+          renewal_terms: mt?.renewalTerms ?? null,
+          termination_notice_days: mt?.terminationNoticeDays ?? null,
+          exclusivity: mt?.exclusivity ?? null,
+          covers_multiple_sites: mt?.coversMultipleSites ?? false,
+          governing_law: ed.legalTerms?.governingLaw ?? null,
+          notes: ed.legalTerms?.notes ?? null,
+        }
+
+        const { data: existingAgreement } = await supabase
+          .from('management_agreements')
+          .select('id')
+          .eq('sam2_agreement_id', payload.agreementId)
+          .maybeSingle()
+
+        let managementAgreementId: string
+        if (existingAgreement) {
+          managementAgreementId = existingAgreement.id
+          const { error } = await supabase.from('management_agreements').update(agreementRow).eq('id', managementAgreementId)
+          if (error) throw new Error(error.message)
+        } else {
+          const { data: inserted, error } = await supabase.from('management_agreements').insert([agreementRow]).select('id').single()
+          if (error) throw new Error(error.message)
+          managementAgreementId = inserted.id
+        }
+
+        // Always single-site in practice — SAM 2.0 never files a multi-site
+        // management agreement today (see lib/sam2Types.ts's coversMultipleSites
+        // doc comment). Upsert the join row anyway so the schema is exercised
+        // correctly if that ever changes.
+        const { error: linkError } = await supabase
+          .from('management_agreement_sites')
+          .upsert([{ management_agreement_id: managementAgreementId, site_id: siteId }], { onConflict: 'management_agreement_id,site_id' })
+        if (linkError) warnings.push(`Management agreement saved but could not be linked to its site: ${linkError.message}`)
+
+        if (mt?.coversMultipleSites) {
+          warnings.push('SAM 2.0 flagged this document as covering multiple sites. Only this one site was linked — check for related documents covering the rest.')
+        }
+      } catch (err: any) {
+        console.error('[sam2/sync] management_agreements write failed (non-fatal):', err?.message ?? err)
+        warnings.push('Management agreement terms were extracted but could not be saved to the management_agreements table (migration may not be applied yet). The document itself synced successfully.')
+      }
     }
 
     // ── 4. Upsert the license/agreement ─────────────────────────────────────

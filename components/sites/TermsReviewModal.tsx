@@ -28,7 +28,7 @@ interface Props {
 
 const TERM_GROUPS: { label: string; fields: string[] }[] = [
   { label: 'Parties & Location',  fields: ['licensor', 'licensee', 'site_id', 'premises_address', 'premises_description'] },
-  { label: 'Management Agreement', fields: ['document_category', 'site_owner', 'manager_entity', 'management_commission', 'billing_practices'] },
+  { label: 'Management Agreement', fields: ['document_category', 'site_owner', 'manager_entity', 'management_commission', 'billing_practices', 'exclusivity', 'term_end_date', 'renewal_terms'] },
   { label: 'Financial',           fields: ['monthly_rent', 'annual_rent', 'escalation_rate', 'escalation_type', 'one_time_fee', 'utilities'] },
   { label: 'Term & Renewal',      fields: ['signature_date', 'commencement_date', 'initial_term_years', 'renewal_options', 'holdover_provisions'] },
   { label: 'Legal',               fields: ['governing_law', 'permitted_use', 'assignment_allowed', 'termination_notice', 'termination_notice_days', 'insurance_per_occurrence', 'insurance_aggregate', 'insurance_liability', 'relocation_provisions'] },

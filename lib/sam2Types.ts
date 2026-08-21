@@ -236,6 +236,9 @@ export interface Sam2ExtractedData {
    *  Note terminationNoticeDays is in DAYS, unlike renewalOptions.noticePeriodMonths
    *  which is in months — different unit on purpose, don't conflate them. */
   legalTerms?: Sam2LegalTerms
+  /** NEW as of 2026-08-20 (Onno) — only present on documents classified
+   *  role === 'management_agreement'. Confirmed shape, live on his side. */
+  managementTerms?: Sam2ManagementTerms
 }
 
 export interface Sam2LegalTerms {
@@ -248,6 +251,32 @@ export interface Sam2LegalTerms {
   relocationProvisions?: string
   equipmentDescription?: string
   notes?: string
+}
+
+export interface Sam2ManagementTerms {
+  commissionStructure?: 'percentage' | 'flat_fee' | 'hybrid' | 'other'
+  /** Fraction — 0.2 for 20%, not 20. Display/cross-check only, see
+   *  supabase/management_agreements.sql's commission_rate column comment —
+   *  never auto-applied as the operational commission rate the rent engine
+   *  actually uses (Onno's explicit warning, 2026-08-20). */
+  commissionPercentage?: number
+  commissionFlatFeeAmount?: number
+  /** Always filled for hybrid/other structures. */
+  commissionDescription?: string
+  billingPractices?: string
+  /** Only present if explicitly stated in the document — never computed
+   *  from term length (Onno caught and fixed exactly this bug pre-ship). */
+  termEndDate?: string
+  /** Fallback prose when there's no explicit termEndDate, e.g. "five years". */
+  initialTermDescription?: string
+  renewalTerms?: string
+  terminationNoticeDays?: number
+  exclusivity?: 'exclusive' | 'non_exclusive'
+  /** Not optional on Onno's side — always set, defaults true when genuinely
+   *  unclear. In practice we should never receive a payload with this true:
+   *  a document naming more than one site never gets filed by SAM 2.0 today,
+   *  it stays in his review inbox for a person to sort out manually. */
+  coversMultipleSites: boolean
 }
 
 // ── The actual wire envelope ─────────────────────────────────────────────────
