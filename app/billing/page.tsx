@@ -79,6 +79,9 @@ export default async function BillingPage() {
           Rent schedule status across every active, pending, or expiring agreement — for viewing a
           single schedule, use the Rent Schedule tab on the relevant Site, Licensee, or Owner page.
         </p>
+        <Link href="/billing/management-agreements" style={{ display: 'inline-block', marginTop: '10px', fontSize: '13px', color: '#2563eb', fontWeight: 600, textDecoration: 'none' }}>
+          View Management Agreements →
+        </Link>
       </div>
 
       {/* Summary cards */}

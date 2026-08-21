@@ -26,6 +26,8 @@ function csvEscape(v: any): string {
 
 interface OwnerOption { id: string; name: string }
 
+interface ManagementInfo { manager: string | null; commissionType: string | null; commissionRate: number | null; flatFeeAmount: number | null }
+
 interface TenancyRow {
   id: string
   site_id: string
@@ -66,7 +68,7 @@ const REPORTS = [
   { id: 'lease_timeline',   title: 'Lease Timeline',          description: 'Visual Gantt of every license across all sites — spot occupancy gaps, revenue peaks, and tenant lifecycle.',  icon: Activity,      color: '#f0f9ff', iconColor: '#0284c7' },
 ]
 
-export default function ReportsClient({ tenancies, owners }: { tenancies: TenancyRow[]; owners: OwnerOption[] }) {
+export default function ReportsClient({ tenancies, owners, managementBySite }: { tenancies: TenancyRow[]; owners: OwnerOption[]; managementBySite?: Record<string, ManagementInfo> }) {
   const { ownerSingular, ownerPlural } = useOrgLabel()
   const [generating, setGenerating] = useState<string | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -150,7 +152,7 @@ export default function ReportsClient({ tenancies, owners }: { tenancies: Tenanc
 
       {preview && (
         <div ref={previewRef}>
-          <ReportPreview id={preview} tenancies={filtered} ownerName={selectedOwnerName} onClose={() => setPreview(null)} />
+          <ReportPreview id={preview} tenancies={filtered} ownerName={selectedOwnerName} managementBySite={managementBySite} onClose={() => setPreview(null)} />
         </div>
       )}
     </div>
@@ -197,7 +199,7 @@ function printLeaseTimeline() {
   }
 }
 
-function ReportPreview({ id, tenancies, ownerName, onClose }: { id: string; tenancies: TenancyRow[]; ownerName: string | null; onClose: () => void }) {
+function ReportPreview({ id, tenancies, ownerName, managementBySite, onClose }: { id: string; tenancies: TenancyRow[]; ownerName: string | null; managementBySite?: Record<string, ManagementInfo>; onClose: () => void }) {
   const { ownerSingular } = useOrgLabel()
   const report = REPORTS.find(r => r.id === id)!
   const now = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
@@ -226,7 +228,7 @@ function ReportPreview({ id, tenancies, ownerName, onClose }: { id: string; tena
         <div className="report-no-print" style={{ display: 'flex', gap: '10px' }}>
           {id !== 'lease_timeline' && (
             <button
-              onClick={() => triggerCsvDownload(id, tenancies, ownerName, ownerSingular)}
+              onClick={() => triggerCsvDownload(id, tenancies, ownerName, ownerSingular, managementBySite)}
               style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(22,163,74,0.25)', color: '#86efac', border: '1px solid rgba(134,239,172,0.4)', borderRadius: '6px', padding: '7px 14px', fontSize: '13px', cursor: 'pointer' }}
             >
               <Download size={14} /> Export CSV
@@ -1129,7 +1131,7 @@ function LeaseTimelineReport({ tenancies }: { tenancies: TenancyRow[] }) {
 
 // ─── CSV export ───────────────────────────────────────────────────────────────
 
-function getReportCsv(id: string, tenancies: TenancyRow[], ownerLabel: string = 'Owner'): { filename: string; csv: string } | null {
+function getReportCsv(id: string, tenancies: TenancyRow[], ownerLabel: string = 'Owner', managementBySite?: Record<string, ManagementInfo>): { filename: string; csv: string } | null {
   const now = new Date()
   const toRow = (arr: any[]) => arr.map(csvEscape).join(',')
 
@@ -1137,11 +1139,18 @@ function getReportCsv(id: string, tenancies: TenancyRow[], ownerLabel: string = 
     case 'rent_roll': {
       const rows = [...tenancies.filter(t => ['active','pending','expiring_soon'].includes(t.status))]
         .sort((a, b) => (a.tower_sites?.site_code ?? '').localeCompare(b.tower_sites?.site_code ?? ''))
-      const hdr = ['Site Code','Site Name','Licensee','Mount Type','Annual Rent','Escalation %','License Start','License End','Status']
-      const lines = rows.map(t => toRow([
-        t.tower_sites?.site_code, t.tower_sites?.name, t.licensees?.name,
-        t.mount_type, t.annual_rent, t.escalation_rate, t.license_start, t.license_end, t.status,
-      ]))
+      const hdr = ['Site Code','Site Name','Licensee','Mount Type','Annual Rent','Escalation %','License Start','License End','Status','Manager','Commission']
+      const lines = rows.map(t => {
+        const mgmt = managementBySite?.[t.site_id]
+        const commission = !mgmt ? '' :
+          mgmt.commissionType === 'percentage' && mgmt.commissionRate != null ? `${(mgmt.commissionRate * 100).toFixed(1)}%` :
+          mgmt.commissionType === 'flat_fee' && mgmt.flatFeeAmount != null ? `$${mgmt.flatFeeAmount}` : ''
+        return toRow([
+          t.tower_sites?.site_code, t.tower_sites?.name, t.licensees?.name,
+          t.mount_type, t.annual_rent, t.escalation_rate, t.license_start, t.license_end, t.status,
+          mgmt?.manager ?? '', commission,
+        ])
+      })
       return { filename: 'rent-roll', csv: [hdr.join(','), ...lines].join('\n') }
     }
 
@@ -1262,8 +1271,8 @@ function getReportCsv(id: string, tenancies: TenancyRow[], ownerLabel: string = 
   }
 }
 
-function triggerCsvDownload(id: string, tenancies: TenancyRow[], ownerName: string | null, ownerLabel: string = 'Owner') {
-  const result = getReportCsv(id, tenancies, ownerLabel)
+function triggerCsvDownload(id: string, tenancies: TenancyRow[], ownerName: string | null, ownerLabel: string = 'Owner', managementBySite?: Record<string, ManagementInfo>) {
+  const result = getReportCsv(id, tenancies, ownerLabel, managementBySite)
   if (!result) return
   const suffix  = ownerName ? `-${ownerName.replace(/\s+/g,'-').toLowerCase()}` : ''
   const dateStr = new Date().toISOString().slice(0, 10)
