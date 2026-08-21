@@ -82,6 +82,11 @@ export default function SiteDocuments({ siteId, initialDocs, onDocsChange, canEd
   const [uploadLabel, setUploadLabel] = useState('Uploading…')
   const fileRef = useRef<HTMLInputElement>(null)
   const cancelledRef = useRef(false)
+  // Batch upload: multiple files in one drop/selection, same site — the
+  // native, unblocked slice of the iframe-replacement work (see
+  // internal-build-scope-native-panel.md). Portfolio-wide multi-site
+  // matching is a separate, bigger piece that's still blocked on Onno.
+  const [batchSummary, setBatchSummary] = useState<{ uploaded: number; skipped: number; failed: number; rows: { name: string; status: 'uploaded' | 'skipped' | 'failed'; reason?: string }[] } | null>(null)
 
   function updateDocs(updater: (prev: Doc[]) => Doc[]) {
     setDocs(prev => {
@@ -100,31 +105,32 @@ export default function SiteDocuments({ siteId, initialDocs, onDocsChange, canEd
 
   const leases = docs.filter(d => d.doc_type === 'lease')
 
-  async function upload(file: File) {
-    cancelledRef.current = false
-    setUploading(true)
-    setUploadProgress(5)
-    setUploadLabel('Reading file…')
-
+  // Uploads one file, save-first: hash, then Storage, then the metadata row.
+  // Returns a result instead of throwing/alerting so a batch can keep going
+  // past one bad file rather than stopping the whole drop.
+  async function uploadOne(file: File): Promise<{ status: 'uploaded' | 'skipped' | 'failed'; reason?: string; doc?: any }> {
     const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL  || 'https://vfntpdpneusqgcwxwkix.supabase.co'
     const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZmbnRwZHBuZXVzcWdjd3h3a2l4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NTg2MzEsImV4cCI6MjA5MzUzNDYzMX0.kFZ6b2WKAl7GVsEQZeO33qcxhyBruQlTfW0eZfkcg1c'
-    let storagePath = ''
 
     try {
       const arrayBuffer = await file.arrayBuffer()
-      if (cancelledRef.current) return
+      if (cancelledRef.current) return { status: 'failed', reason: 'Cancelled' }
 
-      setUploadProgress(15)
       setUploadLabel('Hashing file…')
       const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer)
       const hashArray  = Array.from(new Uint8Array(hashBuffer))
       const fileHash   = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-      if (cancelledRef.current) return
+      if (cancelledRef.current) return { status: 'failed', reason: 'Cancelled' }
+
+      // Dedup against what's already on file for this site — same content
+      // hash, skip rather than create a duplicate row.
+      if (docs.some(d => d.file_hash && d.file_hash === fileHash)) {
+        return { status: 'skipped', reason: 'Already on file (same content)' }
+      }
 
       const sizeLabel = file.size >= 1048576 ? `${(file.size / 1048576).toFixed(1)} MB` : `${Math.round(file.size / 1024)} KB`
-      setUploadProgress(25)
-      setUploadLabel(`Uploading ${sizeLabel}…`)
-      storagePath = `${siteId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+      setUploadLabel(`Uploading ${file.name} (${sizeLabel})…`)
+      const storagePath = `${siteId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
 
       const storageRes = await fetch(
         `${SUPABASE_URL}/storage/v1/object/lease-documents/${storagePath}`,
@@ -138,13 +144,12 @@ export default function SiteDocuments({ siteId, initialDocs, onDocsChange, canEd
           body: new Uint8Array(arrayBuffer),
         }
       )
-      if (cancelledRef.current) return
+      if (cancelledRef.current) return { status: 'failed', reason: 'Cancelled' }
       if (!storageRes.ok) {
         const errText = await storageRes.text().catch(() => '')
-        throw new Error(`Storage upload failed (${storageRes.status}): ${errText || 'no details'}`)
+        return { status: 'failed', reason: `Storage upload failed (${storageRes.status}): ${errText || 'no details'}` }
       }
 
-      setUploadProgress(90)
       setUploadLabel('Saving record…')
       const res = await fetch(`/api/sites/${siteId}/documents`, {
         method: 'POST',
@@ -161,32 +166,66 @@ export default function SiteDocuments({ siteId, initialDocs, onDocsChange, canEd
 
       let data: any = {}
       try { data = await res.json() } catch { data = {} }
-      if (cancelledRef.current) return
-      if (!res.ok) throw new Error(data.error ?? `API error ${res.status}`)
+      if (cancelledRef.current) return { status: 'failed', reason: 'Cancelled' }
+      if (!res.ok) return { status: 'failed', reason: data.error ?? `API error ${res.status}` }
 
-      setUploadProgress(100)
-      updateDocs(prev => [data, ...prev])
-      setShowUpload(false)
-      setParentId('')
-      // Auto-open the modal for the new doc
-      setOpenDocId(data.id)
+      return { status: 'uploaded', doc: data }
     } catch (err: any) {
-      if (!cancelledRef.current) alert('Upload failed: ' + err.message)
-    } finally {
-      if (!cancelledRef.current) {
-        setUploading(false)
-        setUploadProgress(0)
-        setUploadLabel('Uploading…')
+      return { status: 'failed', reason: err?.message ?? 'Unknown error' }
+    }
+  }
+
+  // Drives one or many files through uploadOne sequentially, with a batch
+  // summary at the end (uploaded / skipped-duplicate / failed) — same shape
+  // of result SAM 2.0's own ingestion screen shows, so the experience is
+  // familiar even though this path never touches SAM 2.0.
+  async function uploadBatch(files: File[]) {
+    if (files.length === 0) return
+    cancelledRef.current = false
+    setBatchSummary(null)
+    setUploading(true)
+
+    const rows: { name: string; status: 'uploaded' | 'skipped' | 'failed'; reason?: string }[] = []
+    const newDocs: any[] = []
+
+    for (let i = 0; i < files.length; i++) {
+      if (cancelledRef.current) break
+      setUploadProgress(Math.round((i / files.length) * 100))
+      setUploadLabel(`File ${i + 1} of ${files.length}: ${files[i].name}`)
+      const result = await uploadOne(files[i])
+      rows.push({ name: files[i].name, status: result.status, reason: result.reason })
+      if (result.status === 'uploaded' && result.doc) newDocs.push(result.doc)
+    }
+
+    if (newDocs.length > 0) updateDocs(prev => [...newDocs, ...prev])
+
+    if (!cancelledRef.current) {
+      setUploadProgress(100)
+      setBatchSummary({
+        uploaded: rows.filter(r => r.status === 'uploaded').length,
+        skipped:  rows.filter(r => r.status === 'skipped').length,
+        failed:   rows.filter(r => r.status === 'failed').length,
+        rows,
+      })
+      setParentId('')
+      // Auto-open the modal only for a single successful upload — a batch
+      // summary is more useful than jumping into one arbitrary document.
+      if (files.length === 1 && newDocs.length === 1) {
+        setShowUpload(false)
+        setOpenDocId(newDocs[0].id)
       }
     }
+    setUploading(false)
+    setUploadProgress(0)
+    setUploadLabel('Uploading…')
   }
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setDragging(false)
-    const file = e.dataTransfer.files[0]
-    if (file) upload(file)
-  }, [docType, parentId])
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) uploadBatch(files)
+  }, [docType, parentId, docs])
 
   const openDoc = docs.find(d => d.id === openDocId)
 
@@ -257,13 +296,37 @@ export default function SiteDocuments({ siteId, initialDocs, onDocsChange, canEd
               ) : (
                 <>
                   <Upload size={22} color="#94a3b8" style={{ marginBottom: '8px' }} />
-                  <div style={{ fontSize: '13px', color: '#64748b' }}>Drop a file here or <span style={{ color: '#2563eb', fontWeight: 600 }}>browse</span></div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>PDF, Word, JPG, PNG, TIFF — max 50 MB</div>
+                  <div style={{ fontSize: '13px', color: '#64748b' }}>Drop one or more files here or <span style={{ color: '#2563eb', fontWeight: 600 }}>browse</span></div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>PDF, Word, JPG, PNG, TIFF — max 50 MB each. Same doc type applies to all files in one drop.</div>
                 </>
               )}
             </div>
-            <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.tiff" style={{ display: 'none' }}
-              onChange={e => { const f = e.target.files?.[0]; if (f) upload(f) }} />
+            <input ref={fileRef} type="file" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.tiff" style={{ display: 'none' }}
+              onChange={e => { const files = Array.from(e.target.files ?? []); if (files.length > 0) uploadBatch(files) }} />
+
+            {/* Batch result summary — shown after a multi-file drop finishes */}
+            {batchSummary && (
+              <div style={{ marginTop: '12px', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', marginBottom: '6px' }}>
+                  {batchSummary.uploaded} uploaded, {batchSummary.skipped} already on file, {batchSummary.failed} failed.
+                </div>
+                {(batchSummary.skipped > 0 || batchSummary.failed > 0) && (
+                  <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    {batchSummary.rows.filter(r => r.status !== 'uploaded').map((r, i) => (
+                      <div key={i}>
+                        <span style={{ color: r.status === 'failed' ? '#dc2626' : '#94a3b8', fontWeight: 600 }}>
+                          {r.status === 'failed' ? 'Failed' : 'Skipped'}:
+                        </span>{' '}
+                        {r.name} — {r.reason}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button onClick={() => setBatchSummary(null)} style={{ marginTop: '8px', background: 'none', border: 'none', color: '#2563eb', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                  Dismiss
+                </button>
+              </div>
+            )}
           </div>
         )}
 
