@@ -38,6 +38,16 @@ interface Props {
   canEdit: boolean
   onClose: () => void
   onUpdated: (doc: Doc) => void
+  /**
+   * Queue navigation — set by review-queue callers (ReviewQueueClient) so
+   * "all approvals happen from this modal" actually works at volume instead
+   * of closing and reopening for each document. Omitted entirely by
+   * single-document callers (SiteDocuments.tsx's own detail view), which
+   * keep today's plain open/close behavior.
+   */
+  queuePosition?: { index: number; total: number }
+  onNext?: () => void
+  onPrev?: () => void
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -110,12 +120,21 @@ function fmt(bytes: number) {
 
 // ─── Main modal ───────────────────────────────────────────────────────────────
 
-export default function DocDetailModal({ doc, siteId, canEdit, onClose, onUpdated }: Props) {
-  const [tab, setTab] = useState<'overview' | 'terms' | 'audit'>('overview')
+export default function DocDetailModal({ doc, siteId, canEdit, onClose, onUpdated, queuePosition, onNext, onPrev }: Props) {
+  const [tab, setTab] = useState<'overview' | 'terms' | 'audit'>(queuePosition ? 'terms' : 'overview')
   const [localDoc, setLocalDoc] = useState(doc)
   const [approving, setApproving] = useState(false)
   const [notarizing, setNotarizing] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Queue callers keep this same modal instance mounted and swap `doc` as
+  // the reviewer moves through the list — sync local state to match rather
+  // than only reading the initial prop once.
+  useEffect(() => {
+    setLocalDoc(doc)
+    setActionError(null)
+    if (queuePosition) setTab('terms')
+  }, [doc.id])
 
   // Scroll lock
   useEffect(() => {
@@ -141,8 +160,15 @@ export default function DocDetailModal({ doc, siteId, canEdit, onClose, onUpdate
     const res = await fetch(`/api/sites/${siteId}/documents/${doc.id}/approve`, { method: 'POST' })
     const data = await res.json()
     setApproving(false)
-    if (res.ok) update(data)
-    else setActionError('Approval failed: ' + (data.error ?? 'Unknown error'))
+    if (res.ok) {
+      // Queue callers remove a no-longer-"review_required" doc from their
+      // list on onUpdated, which reveals the next item at this same index —
+      // that's the actual "and Next" in "Approve & Next", no separate
+      // onNext() call needed (calling both would skip two documents).
+      update(data)
+    } else {
+      setActionError('Approval failed: ' + (data.error ?? 'Unknown error'))
+    }
   }
 
   async function notarize() {
@@ -195,6 +221,15 @@ export default function DocDetailModal({ doc, siteId, canEdit, onClose, onUpdate
 
           {/* Action buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, marginLeft: '16px' }}>
+            {queuePosition && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '4px' }}>
+                <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {queuePosition.index + 1} of {queuePosition.total}
+                </span>
+                <button onClick={onPrev} disabled={queuePosition.index === 0} style={navBtnStyle}>‹</button>
+                <button onClick={onNext} disabled={queuePosition.index >= queuePosition.total - 1} style={navBtnStyle}>›</button>
+              </div>
+            )}
             {/* "Extract Terms" (legacy in-house Anthropic extraction) retired
                 2026-08-19 — SAM 2.0 is the extraction layer now, this
                 per-document button ran a second, redundant pipeline and
@@ -204,7 +239,7 @@ export default function DocDetailModal({ doc, siteId, canEdit, onClose, onUpdate
             {canEdit && localDoc.doc_status === 'review_required' && (
               <button onClick={approve} disabled={approving} style={btnStyle('#15803d')}>
                 {approving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <ThumbsUp size={13} />}
-                {approving ? 'Approving…' : 'Approve'}
+                {approving ? 'Approving…' : (onNext ? 'Approve & Next' : 'Approve')}
               </button>
             )}
             {canEdit && localDoc.doc_status === 'approved' && !localDoc.iota_block_id && (
@@ -666,4 +701,10 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
 
 function btnStyle(bg: string): React.CSSProperties {
   return { display: 'inline-flex', alignItems: 'center', gap: '5px', background: bg, color: 'white', border: 'none', borderRadius: '7px', padding: '7px 14px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }
+}
+
+const navBtnStyle: React.CSSProperties = {
+  background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', width: '26px', height: '26px',
+  fontSize: '14px', fontWeight: 700, color: '#475569', cursor: 'pointer', display: 'inline-flex',
+  alignItems: 'center', justifyContent: 'center',
 }

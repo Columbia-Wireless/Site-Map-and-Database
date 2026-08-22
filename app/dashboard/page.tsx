@@ -2,8 +2,9 @@ export const dynamic = 'force-dynamic'
 
 import { getSupabase } from '@/lib/supabase'
 import { getProfile } from '@/lib/profile'
-import { scopeFromProfile, scopeSitesQuery, type OrgScope } from '@/lib/orgScope'
-import { DollarSign, MapPin, AlertTriangle, TrendingUp } from 'lucide-react'
+import { scopeFromProfile, scopeSitesQuery, getVisibleSiteIds, type OrgScope } from '@/lib/orgScope'
+import { DollarSign, MapPin, AlertTriangle, TrendingUp, FileWarning } from 'lucide-react'
+import Link from 'next/link'
 import RevenueChart from '@/components/dashboard/RevenueChart'
 import StatusBreakdown from '@/components/dashboard/StatusBreakdown'
 import ExpiryTimeline from '@/components/dashboard/ExpiryTimeline'
@@ -43,6 +44,17 @@ async function getMetrics(scope: OrgScope) {
   return { total, activeSites, totalRevenue, avgRent, in90, tenancies }
 }
 
+async function getNeedsReviewCount(scope: OrgScope): Promise<number> {
+  const supabase = getSupabase()
+  let query = supabase.from('site_documents').select('id', { count: 'exact', head: true }).eq('doc_status', 'review_required')
+  if (!scope.isPlatformAdmin) {
+    const visibleSiteIds = await getVisibleSiteIds(scope)
+    if (visibleSiteIds) query = query.in('site_id', visibleSiteIds)
+  }
+  const { count } = await query
+  return count ?? 0
+}
+
 async function getRecentChanges(scope: OrgScope) {
   const supabase = getSupabase()
   const query = scope.isPlatformAdmin
@@ -56,7 +68,7 @@ export default async function DashboardPage() {
   const profile = await getProfile()
   const scope = scopeFromProfile(profile)
   const ownerSingular = profile?.owner_label_singular ?? 'Owner'
-  const [metrics, recentChanges] = await Promise.all([getMetrics(scope), getRecentChanges(scope)])
+  const [metrics, recentChanges, needsReviewCount] = await Promise.all([getMetrics(scope), getRecentChanges(scope), getNeedsReviewCount(scope)])
   if (!metrics) return <div style={{ padding: '40px' }}>Unable to load data.</div>
 
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
@@ -71,7 +83,17 @@ export default async function DashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '28px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', marginBottom: '28px' }}>
+        <Link href="/review-queue" style={{ textDecoration: 'none' }}>
+          <KpiCard
+            label="Needs Review"
+            value={String(needsReviewCount)}
+            sub="documents awaiting approval"
+            icon={<FileWarning size={20} color="#b91c1c" />}
+            color="#fef2f2"
+            alert={needsReviewCount > 0}
+          />
+        </Link>
         <KpiCard
           label="Annual Revenue"
           value={fmt(metrics.totalRevenue)}

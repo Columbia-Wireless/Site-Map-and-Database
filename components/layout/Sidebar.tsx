@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, MapPin, Map, FileText, Building2, Radio, Landmark, Settings, LogOut, Users, ClipboardList, X, ShieldCheck, TrendingUp, Search, PenSquare, DollarSign } from 'lucide-react'
+import { LayoutDashboard, MapPin, Map, FileText, Building2, Radio, Landmark, Settings, LogOut, Users, ClipboardList, X, ShieldCheck, TrendingUp, Search, PenSquare, DollarSign, FileWarning } from 'lucide-react'
 import { createBrowserClient } from '@supabase/ssr'
 import { useEffect, useState } from 'react'
 import MasterQuery from './MasterQuery'
@@ -14,6 +14,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGci
 function buildNav(ownerPlural: string) {
   return [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/review-queue', label: 'Needs Review', icon: FileWarning },
     { href: '/sites', label: 'Site Portfolio', icon: MapPin },
     { href: '/tenants', label: 'Licensees', icon: Building2 },
     { href: '/owners', label: `Site ${ownerPlural}`, icon: Landmark },

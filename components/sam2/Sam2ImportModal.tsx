@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { X, AlertTriangle, CheckCircle2, Loader2, ClipboardList, History, FileWarning, FileCheck2, FileQuestion } from 'lucide-react'
+import Link from 'next/link'
 import Sam2LeaseModule from './Sam2LeaseModule'
 import TermsReviewModal from '../sites/TermsReviewModal'
 
@@ -165,9 +166,12 @@ export default function Sam2ImportModal({ onClose, onSynced }: Props) {
         <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
         {showHistory && (
           <div style={{ width: '340px', flexShrink: 0, borderRight: '1px solid #f1f5f9', overflow: 'auto', padding: '16px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', marginBottom: '10px', letterSpacing: '0.03em' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', marginBottom: '4px', letterSpacing: '0.03em' }}>
               RECENT SAM 2.0 IMPORTS
             </div>
+            <Link href="/review-queue" style={{ display: 'block', fontSize: '12px', color: '#2563eb', fontWeight: 600, textDecoration: 'none', marginBottom: '12px' }}>
+              View full Needs Review queue →
+            </Link>
             {recentImports.length === 0 && (
               <div style={{ fontSize: '12px', color: '#94a3b8' }}>No import history yet.</div>
             )}
